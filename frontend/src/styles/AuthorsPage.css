@@ -1,0 +1,184 @@
+.authors-page {
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.authors-header {
+  margin-bottom: 2rem;
+  text-align: center;
+}
+
+.authors-header h1 {
+  font-size: 2.5rem;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.authors-count {
+  font-size: 1rem;
+  color: var(--text-secondary);
+}
+
+.authors-search {
+  margin-bottom: 2rem;
+}
+
+.search-input {
+  width: 100%;
+  max-width: 500px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  border: 2px solid var(--border-color);
+  border-radius: 0.5rem;
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+  transition: border-color 0.3s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.authors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.no-authors {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+}
+
+.author-section {
+  background-color: var(--card-bg);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: box-shadow 0.3s ease;
+}
+
+.author-section:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.author-header {
+  padding: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  background-color: var(--card-bg);
+  border-bottom: 2px solid var(--border-color);
+  transition: background-color 0.2s ease;
+}
+
+.author-header:hover {
+  background-color: rgba(139, 92, 246, 0.05);
+}
+
+.author-info {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+}
+
+.author-header h2 {
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.comic-count {
+  display: inline-block;
+  background-color: var(--primary-color);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.author-role {
+  display: inline-block;
+  background-color: #06b6d4;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+.expand-icon {
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+  transition: transform 0.3s ease;
+  margin-left: 1rem;
+}
+
+.expand-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.author-comics {
+  padding: 1.5rem;
+  background-color: rgba(139, 92, 246, 0.02);
+  border-top: 1px solid var(--border-color);
+}
+
+.comics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1.5rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .authors-page {
+    padding: 1rem;
+  }
+
+  .authors-header h1 {
+    font-size: 1.8rem;
+  }
+
+  .author-header {
+    padding: 1rem;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .author-info {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  .expand-icon {
+    margin-left: 0;
+    align-self: flex-end;
+  }
+
+  .comics-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .comics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .author-header h2 {
+    font-size: 1.25rem;
+  }
+}

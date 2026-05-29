@@ -1,0 +1,244 @@
+.usa-volumes-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.usa-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.usa-header h1 {
+  margin: 0;
+}
+
+.usa-description {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.usa-search input {
+  width: 100%;
+  max-width: 420px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+}
+
+.usa-add-volume-section,
+.usa-saved-volumes-section {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.usa-add-volume-form,
+.usa-saved-volume-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.usa-add-volume-form input {
+  flex: 1 1 320px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--input-bg);
+  color: var(--text-primary);
+}
+
+.usa-add-volume-form button,
+.usa-saved-volume-actions button {
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: var(--primary-color);
+  color: white;
+  cursor: pointer;
+}
+
+.usa-delete-volume-btn {
+  background: var(--danger-color);
+}
+
+.usa-add-volume-form button:disabled,
+.usa-saved-volume-actions button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.usa-volume-message {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.usa-saved-volumes-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.usa-saved-volume-card {
+  background: var(--background);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+}
+
+.usa-saved-volume-header {
+  justify-content: space-between;
+}
+
+.usa-saved-volume-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.usa-saved-volume-header p {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+}
+
+.usa-saved-volume-source {
+  margin: 0.75rem 0 0;
+  word-break: break-word;
+}
+
+.usa-saved-volume-source a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.usa-saved-volume-actions button {
+  min-width: 160px;
+}
+
+.usa-detected-volumes-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.75rem 0;
+}
+
+.usa-detected-volumes-header h2 {
+  margin: 0;
+}
+
+.usa-detected-volumes-header p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.usa-volumes-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.usa-volume-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.usa-volume-header {
+  width: 100%;
+  padding: 1rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  background: var(--card-bg);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.usa-volume-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.usa-volume-header p {
+  margin: 0.35rem 0 0;
+  color: var(--text-secondary);
+}
+
+.usa-toggle {
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+.usa-volume-details {
+  padding: 1rem 1.25rem 1.25rem;
+}
+
+.usa-no-issues,
+.usa-loading-issues {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.usa-issues-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.usa-issues-table th,
+.usa-issues-table td {
+  padding: 0.75rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.usa-issues-table th {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.usa-issues-table tr:last-child td {
+  border-bottom: none;
+}
+
+.usa-issues-table tbody tr.in-collection {
+  background-color: rgba(76, 175, 80, 0.1);
+}
+
+.usa-issues-table tbody tr.in-collection:hover {
+  background-color: rgba(76, 175, 80, 0.15);
+}
+
+.usa-issues-table tbody tr.clickable {
+  cursor: pointer;
+}
+
+.usa-issues-table tbody tr.clickable:hover {
+  background-color: rgba(76, 175, 80, 0.18);
+}
+
+.usa-loading,
+.usa-empty {
+  padding: 1rem 0;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 780px) {
+  .usa-volume-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .usa-issues-table th,
+  .usa-issues-table td {
+    padding: 0.65rem 0.5rem;
+  }
+}

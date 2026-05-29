@@ -1,0 +1,119 @@
+.lecturas-section {
+  padding: 2rem;
+}
+.lecturas-nav {
+  margin-bottom: 1.5rem;
+  display: flex;
+  gap: 1rem;
+}
+.lecturas-nav a {
+  text-decoration: none;
+  color: #333;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-bottom: 2px solid transparent;
+  transition: all 0.3s;
+}
+.lecturas-nav a:hover {
+  color: #1976d2;
+}
+.lecturas-nav a.active {
+  color: #1976d2;
+  border-bottom-color: #1976d2;
+}
+.lecturas-content {
+  background: #fafafa;
+  padding: 1.5rem;
+  border-radius: 8px;
+  min-height: 200px;
+}
+button {
+  background: #1976d2;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+button:hover {
+  background: #1565c0;
+}
+button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+.lecturas-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+.lecturas-table thead {
+  background: #e0e0e0;
+}
+.lecturas-table th {
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+}
+.lecturas-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #ddd;
+}
+.lecturas-table tbody tr:hover {
+  background: #f5f5f5;
+}
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  min-width: 400px;
+}
+.modal h2 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+}
+.modal label {
+  display: block;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+.modal input,
+.modal select {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+.modal-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+  justify-content: flex-end;
+}
+.modal-actions button {
+  margin: 0;
+}
+.error {
+  color: #d32f2f;
+  background: #ffebee;
+  padding: 1rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+}
+
