@@ -1,0 +1,15 @@
+{
+  "name": "comic-collection",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start-backend": "cd backend && npm run start",
+    "dev-backend": "cd backend && npm run dev",
+    "start-frontend": "cd frontend && npm run preview",
+    "dev-frontend": "cd frontend && npm run dev",
+    "comicCollectionDatolcas": "concurrently \"npm:dev-backend\" \"npm:dev-frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0"
+  }
+}

@@ -51,11 +51,12 @@ function App() {
 
           <main className="main-content">
             <Routes>
-              <Route path="/lecturas" element={<Lecturas />}>
-                <Route path="pasadas" element={<LecturasPasadas />} />
-                <Route path="en-curso" element={<LecturasEnCurso />} />
-                <Route path="futuras" element={<LecturasFuturas />} />
-              </Route>
+                <Route path="/lecturas" element={<Lecturas />}>
+                  <Route index element={<LecturasEnCurso />} />
+                  <Route path="pasadas" element={<LecturasPasadas />} />
+                  <Route path="en-curso" element={<LecturasEnCurso />} />
+                  <Route path="futuras" element={<LecturasFuturas />} />
+                </Route>
               <Route path="/" element={<CollectionPage />} />
               <Route path="/authors" element={<AuthorsPage />} />
               <Route path="/series" element={<SeriesPage />} />

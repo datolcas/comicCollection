@@ -4,7 +4,7 @@ import Statistics from '../components/Statistics';
 import '../styles/DashboardPage.css';
 
 const DashboardPage = () => {
-  const { statistics, fetchStatistics, exportData, importData } = useComics();
+  const { statistics, fetchStatistics, exportData, importData, exportCsv } = useComics();
   const [importing, setImporting] = useState(false);
 
   useEffect(() => {
@@ -13,8 +13,8 @@ const DashboardPage = () => {
 
   const handleExport = async () => {
     try {
-      await exportData();
-      alert('¡Cómics exportados exitosamente!');
+      await exportCsv();
+      alert('¡Cómics exportados (CSV) exitosamente!');
     } catch (err) {
       alert('Error al exportar: ' + err.message);
     }
@@ -44,7 +44,8 @@ const DashboardPage = () => {
       <div className="dashboard-header">
         <h1>Panel de Control</h1>
         <div className="action-buttons">
-          <button className="btn-export" onClick={handleExport}>📥 Exportar Colección</button>
+          <button className="btn-export" onClick={handleExport}>📥 Exportar Colección (CSV)</button>
+          <button className="btn-export-david" onClick={async () => { try { await exportData(); alert('¡Export para David completado!') } catch (err) { alert('Error al exportar: ' + err.message) } }}>📥 Exportar para David</button>
           <label className="btn-import">
             📤 Importar Colección
             <input

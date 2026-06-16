@@ -13,8 +13,11 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Se requieren comic y startDate' });
     }
 
+    // Accept comic as id string or embedded object
+    const comicId = typeof comic === 'string' ? comic : (comic._id || comic.id || null);
+
     const lecturaData = {
-      comic,
+      comic: comicId || comic,
       startDate: new Date(startDate),
       endDate: endDate ? new Date(endDate) : null,
       createdAt: new Date(),
@@ -24,14 +27,26 @@ router.post('/', async (req, res) => {
     const docRef = await db.collection(COLLECTION).add(lecturaData);
     
     // Obtener el documento creado con la información del cómic
-    const comicDoc = await db.collection('comics').doc(comic).get();
-    const comicData = comicDoc.exists ? { _id: comicDoc.id, ...comicDoc.data() } : null;
+    let comicData = null;
+    if (comicId) {
+      const comicDoc = await db.collection('comics').doc(comicId).get();
+      comicData = comicDoc.exists ? { _id: comicDoc.id, ...comicDoc.data() } : null;
+    } else if (typeof comic === 'object') {
+      comicData = comic;
+    }
 
-    res.status(201).json({
+    const resp = {
       _id: docRef.id,
       ...lecturaData,
       comic: comicData,
-    });
+    };
+    // Normalize date fields to ISO strings for the client
+    resp.startDate = resp.startDate instanceof Date ? resp.startDate.toISOString() : resp.startDate;
+    resp.endDate = resp.endDate instanceof Date ? resp.endDate.toISOString() : resp.endDate;
+    resp.createdAt = resp.createdAt instanceof Date ? resp.createdAt.toISOString() : resp.createdAt;
+    resp.updatedAt = resp.updatedAt instanceof Date ? resp.updatedAt.toISOString() : resp.updatedAt;
+
+    res.status(201).json(resp);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -45,14 +60,33 @@ router.get('/', async (req, res) => {
 
     for (const doc of snapshot.docs) {
       const lecturaData = doc.data();
-      const comicDoc = await db.collection('comics').doc(lecturaData.comic).get();
-      const comicData = comicDoc.exists ? { _id: comicDoc.id, ...comicDoc.data() } : null;
+      // lecturaData.comic may be an id string or an embedded object
+      let comicData = null;
+      const storedComic = lecturaData.comic;
+      if (typeof storedComic === 'string') {
+        const comicDoc = await db.collection('comics').doc(storedComic).get();
+        comicData = comicDoc.exists ? { _id: comicDoc.id, ...comicDoc.data() } : null;
+      } else if (typeof storedComic === 'object') {
+        comicData = storedComic;
+      }
 
-      lecturas.push({
-        _id: doc.id,
-        ...lecturaData,
-        comic: comicData,
-      });
+      const item = { _id: doc.id, ...lecturaData, comic: comicData };
+      // Normalize Firestore Timestamp objects to ISO strings
+      const norm = (v) => {
+        if (!v) return null;
+        if (v instanceof Date) return v.toISOString();
+        if (v._seconds || v.seconds) {
+          const secs = v._seconds || v.seconds;
+          return new Date(secs * 1000).toISOString();
+        }
+        return v;
+      };
+      item.startDate = norm(item.startDate);
+      item.endDate = norm(item.endDate);
+      item.createdAt = norm(item.createdAt);
+      item.updatedAt = norm(item.updatedAt);
+
+      lecturas.push(item);
     }
 
     res.json(lecturas);

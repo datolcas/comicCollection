@@ -223,18 +223,27 @@ const ComicForm = ({ comic, onSubmit, onCancel, onDelete }) => {
       {/* Idioma */}
       <div className="form-group">
         <label>Idioma</label>
-        <select name="language" value={formData.language} onChange={handleChange}>
-          <option value="">Seleccionar idioma...</option>
-          <option value="Español">Español</option>
-          <option value="Inglés">Inglés</option>
-          <option value="Francés">Francés</option>
-          <option value="Alemán">Alemán</option>
-          <option value="Italiano">Italiano</option>
-          <option value="Portugués">Portugués</option>
-          <option value="Holandés">Holandés</option>
-          <option value="Japonés">Japonés</option>
-          <option value="Otro">Otro</option>
-        </select>
+        {(() => {
+          const defaultLangs = [
+            '', 'Español', 'Inglés', 'Francés', 'Alemán', 'Italiano', 'Portugués', 'Holandés', 'Japonés', 'Otro'
+          ];
+          const langs = [...defaultLangs];
+          const current = formData.language || '';
+          // Insert current language into options if it's not one of defaults and not empty,
+          // placing it before 'Otro' so it's visible.
+          if (current && !langs.includes(current)) {
+            const idx = langs.indexOf('Otro');
+            if (idx === -1) langs.push(current);
+            else langs.splice(idx, 0, current);
+          }
+          return (
+            <select name="language" value={formData.language} onChange={handleChange}>
+              {langs.map((l, i) => (
+                <option key={i} value={l}>{l === '' ? 'Seleccionar idioma...' : l}</option>
+              ))}
+            </select>
+          );
+        })()}
       </div>
 
       {/* Fecha de Publicación */}

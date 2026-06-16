@@ -16,8 +16,10 @@ const AuthorsPage = () => {
   const [preSelectedComicId, setPreSelectedComicId] = useState(null);
 
   useEffect(() => {
-    fetchComics();
-  }, []);
+    if (comics.length === 0) {
+      fetchComics();
+    }
+  }, [comics.length]);
 
   useEffect(() => {
     // Extraer todos los autores y agrupar cómics por autor

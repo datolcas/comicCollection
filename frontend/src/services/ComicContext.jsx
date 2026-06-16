@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import api from './api';
 
 const ComicContext = createContext();
@@ -10,16 +10,46 @@ export const ComicProvider = ({ children }) => {
   const [statistics, setStatistics] = useState(null);
   const [usVolumes, setUsVolumes] = useState([]);
   const [volumeLoading, setVolumeLoading] = useState(false);
+  const [lastComicsQuery, setLastComicsQuery] = useState('');
+  const [comicsHasMore, setComicsHasMore] = useState(false);
+  const comicsCacheByQuery = useRef({});
 
-  const fetchComics = async (filters = {}) => {
+  const clearComicsCache = () => {
+    comicsCacheByQuery.current = {};
+    setLastComicsQuery('');
+    setComicsHasMore(false);
+  };
+
+  const fetchComics = async (filters = {}, options = {}) => {
+    const { force = false } = options;
+    const params = new URLSearchParams(filters).toString();
+    const queryKey = params || '__all__';
+
+    if (!force && comicsCacheByQuery.current[queryKey]) {
+      const cached = comicsCacheByQuery.current[queryKey];
+      setComics(cached.data);
+      setComicsHasMore(cached.hasMore);
+      setLastComicsQuery(queryKey);
+      return cached;
+    }
+
     setLoading(true);
     try {
-      const params = new URLSearchParams(filters).toString();
-      const response = await api.get(`/comics?${params}`);
-      setComics(response.data);
+      const url = params ? `/comics?${params}` : '/comics';
+      const response = await api.get(url);
+      const responseData = response.data;
+      const comicsData = Array.isArray(responseData) ? responseData : responseData.data;
+      const hasMore = responseData && !Array.isArray(responseData) ? responseData.hasMore : false;
+      setComics(comicsData);
+      setComicsHasMore(hasMore);
+      setLastComicsQuery(queryKey);
+      comicsCacheByQuery.current[queryKey] = { data: comicsData, hasMore };
       setError(null);
+      return { data: comicsData, hasMore };
     } catch (err) {
-      setError(err.message);
+      const errorMessage = err.response?.data?.message || err.message || 'Error al cargar cómics';
+      setError(errorMessage);
+      return { data: [], hasMore: false };
     } finally {
       setLoading(false);
     }
@@ -37,7 +67,8 @@ export const ComicProvider = ({ children }) => {
   const addComic = async (comic) => {
     try {
       const response = await api.post('/comics', comic);
-      setComics([...comics, response.data]);
+      clearComicsCache();
+      setComics((prevComics) => [...prevComics, response.data]);
       return response.data;
     } catch (err) {
       const errorMessage = err.response?.data?.message || err.message || 'Error al agregar el cómic';
@@ -49,7 +80,8 @@ export const ComicProvider = ({ children }) => {
   const updateComic = async (id, comic) => {
     try {
       const response = await api.put(`/comics/${id}`, comic);
-      setComics(comics.map(c => c._id === id ? response.data : c));
+      clearComicsCache();
+      setComics((prevComics) => prevComics.map(c => c._id === id ? response.data : c));
       return response.data;
     } catch (err) {
       setError(err.message);
@@ -60,6 +92,7 @@ export const ComicProvider = ({ children }) => {
   const deleteComic = async (id) => {
     try {
       await api.delete(`/comics/${id}`);
+      clearComicsCache();
       setComics(prevComics => prevComics.filter(c => c._id !== id));
     } catch (err) {
       setError(err.message);
@@ -83,10 +116,25 @@ export const ComicProvider = ({ children }) => {
     }
   };
 
+  const exportCsv = async () => {
+    try {
+      const response = await api.get('/comics/export?format=csv', { responseType: 'blob' });
+      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'comics-export.csv';
+      link.click();
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  };
+
   const importData = async (jsonData) => {
     try {
       const response = await api.post('/comics/import', jsonData);
-      await fetchComics();
+      await fetchComics({}, { force: true });
       return response.data;
     } catch (err) {
       setError(err.message);
@@ -157,7 +205,7 @@ export const ComicProvider = ({ children }) => {
     try {
       const response = await api.post('/comics/load-from-list', { urls });
       // Refresh comics after loading
-      await fetchComics();
+      await fetchComics({}, { force: true });
       return response.data;
     } catch (err) {
       const errorMessage = err.response?.data?.message || err.message || 'Error al cargar cómics desde lista';
@@ -179,6 +227,7 @@ export const ComicProvider = ({ children }) => {
         updateComic,
         deleteComic,
         exportData,
+        exportCsv,
         importData,
         fetchComicFromUrl,
         fetchVolumeFromUrl,

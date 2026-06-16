@@ -14,14 +14,16 @@ const SearchBar = ({ onSearch }) => {
   const handleSearchChange = (e) => {
     const value = e.target.value;
     setSearch(value);
-    onSearch({ ...filters, search: value });
   };
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
     const newFilters = { ...filters, [name]: value };
     setFilters(newFilters);
-    onSearch({ ...newFilters, search });
+  };
+
+  const handleSubmit = () => {
+    onSearch({ ...filters, search });
   };
 
   const handleReset = () => {
@@ -42,8 +44,10 @@ const SearchBar = ({ onSearch }) => {
         placeholder="Buscar cómics..."
         value={search}
         onChange={handleSearchChange}
+        onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
         className="search-input"
       />
+      <button className="btn-search" onClick={handleSubmit}>Buscar</button>
       
       <button className="filter-toggle" onClick={() => setShowFilters(!showFilters)}>
         🔍 Filtros
@@ -79,6 +83,7 @@ const SearchBar = ({ onSearch }) => {
             <option value="title">Título A-Z</option>
           </select>
           <button className="btn-reset" onClick={handleReset}>Limpiar Filtros</button>
+          <button className="btn-apply" onClick={handleSubmit}>Aplicar</button>
         </div>
       )}
     </div>

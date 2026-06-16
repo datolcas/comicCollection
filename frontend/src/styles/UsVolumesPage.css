@@ -103,6 +103,19 @@
   font-size: 1rem;
 }
 
+/* Ensure saved volume titles are always visible (no truncation on hover) */
+.usa-saved-volume-header h3 {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+
+/* Ensure saved volume title color contrasts with background */
+.usa-saved-volume-header h3 {
+  color: var(--text-primary);
+}
+
 .usa-saved-volume-header p {
   margin: 0.25rem 0 0;
   color: var(--text-secondary);
@@ -166,6 +179,19 @@
 .usa-volume-header h2 {
   margin: 0;
   font-size: 1rem;
+}
+
+/* Ensure volume titles are always visible (no truncation on hover) */
+.usa-volume-header h2 {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+}
+
+/* Ensure volume title color contrasts with background */
+.usa-volume-header h2 {
+  color: var(--text-primary);
 }
 
 .usa-volume-header p {

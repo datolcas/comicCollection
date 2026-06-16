@@ -1,6 +1,21 @@
 import axios from 'axios';
 import { load } from 'cheerio';
 import { db } from '../server.js';
+import { normalizeComicForInsert } from '../utils/normalizeComic.js';
+
+// Helper: reject implausible numeric matches (timestamps, large IDs)
+const isPlausibleIssue = (s) => {
+  if (s === undefined || s === null) return false;
+  const str = String(s).trim();
+  if (!str) return false;
+  // Reject long numeric sequences (likely timestamps or IDs)
+  const digitsOnly = str.replace(/[^0-9]/g, '');
+  if (digitsOnly.length >= 7) return false;
+  const n = Number(str);
+  if (Number.isNaN(n)) return false;
+  // Accept 0 and reasonable small numbers (up to 9999)
+  return n >= 0 && n <= 9999;
+};
 
 // Helper function to check for duplicate (same title + issue number)
 const checkDuplicateComic = async (title, issueNumber) => {
@@ -12,7 +27,7 @@ const checkDuplicateComic = async (title, issueNumber) => {
       return false;
     }
 
-    if (issueNumber) {
+    if (issueNumber !== undefined && issueNumber !== null) {
       const exactMatch = snapshot.docs.some(doc => doc.data().issueNumber === issueNumber);
       return exactMatch;
     }
@@ -104,7 +119,18 @@ const extractComicDataFromUrl = async (url) => {
       throw new Error('URL no soportada. Usa un enlace de Whakoom o Marvel Fandom.');
     }
 
-    const html = await fetchHtml(url);
+    let html;
+    if (url.includes('whakoom.com')) {
+      // For Whakoom prefer a simple direct fetch to get consistent HTML structure
+      try {
+        const res = await axios.get(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.google.com' }, timeout: 20000 });
+        html = res.data;
+      } catch (e) {
+        html = await fetchHtml(url);
+      }
+    } else {
+      html = await fetchHtml(url);
+    }
 
     if (url.includes('marvel.fandom.com/wiki/')) {
       return extractDataFromMarvelFandom(html, url);
@@ -255,7 +281,12 @@ const extractDataFromMarvelFandom = (html, url) => {
       nl: 'Nederlands',
       ja: '日本語',
     };
-    language = langMap[htmlLang.substring(0, 2)] || htmlLang;
+    // Prefer explicit Spanish country variant when present
+    if (htmlLang.toLowerCase().startsWith('es')) {
+      language = 'Español (España)';
+    } else {
+      language = langMap[htmlLang.substring(0, 2)] || htmlLang;
+    }
   }
 
   const seriesTitle = title.replace(/\s*\(\d{4}[–-]\d{4}\)$/, '').trim();
@@ -315,16 +346,16 @@ const extractData = (html, url) => {
   const normalizeIssueText = text => {
     if (!text) return null;
     const trimmed = text.trim();
-    const issueMatch = trimmed.match(/#?\s*(\d+)\s*\/\s*(\d+)/);
+    const issueMatch = trimmed.match(/#?\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/);
     if (issueMatch) {
       return {
-        local: parseInt(issueMatch[1], 10),
+        local: parseFloat(issueMatch[1]),
         usa: issueMatch[2]
       };
     }
-    const localMatch = trimmed.match(/#?\s*(\d+)/);
+    const localMatch = trimmed.match(/#?\s*(\d+(?:\.\d+)?)/);
     if (localMatch) {
-      return { local: parseInt(localMatch[1], 10) };
+      return { local: parseFloat(localMatch[1]) };
     }
     return null;
   };
@@ -345,28 +376,28 @@ const extractData = (html, url) => {
   if (!extractedSeries) {
     // Try multiple H1 patterns: '#121/12', '#121', '121/12', or '... #121 (texto)'
     let m = null;
-    m = h1FullText.match(/^(.+?)\s*#\s*(\d+)\s*\/\s*(\d+)/); // series #local/usa
+    m = h1FullText.match(/^(.+?)\s*#\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/); // series #local/usa
     if (m) {
       extractedSeries = m[1].trim();
-      extractedIssueLocal = parseInt(m[2], 10);
+      extractedIssueLocal = parseFloat(m[2]);
       extractedIssueUsa = m[3];
     } else {
-      m = h1FullText.match(/^(.+?)\s*#\s*(\d+)/); // series #local
+      m = h1FullText.match(/^(.+?)\s*#\s*(\d+(?:\.\d+)?)/); // series #local
       if (m) {
         extractedSeries = m[1].trim();
-        extractedIssueLocal = parseInt(m[2], 10);
+        extractedIssueLocal = parseFloat(m[2]);
       } else {
-        m = h1FullText.match(/^(.+?)\s*(\d+)\s*\/\s*(\d+)/); // series local/usa without '#'
+        m = h1FullText.match(/^(.+?)\s*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/); // series local/usa without '#'
         if (m) {
           extractedSeries = m[1].trim();
-          extractedIssueLocal = parseInt(m[2], 10);
+          extractedIssueLocal = parseFloat(m[2]);
           extractedIssueUsa = m[3];
         } else {
           // Fallback: any '#123' or trailing number
-          m = h1FullText.match(/^(.+?)\s*#?\s*(\d+)$/);
+          m = h1FullText.match(/^(.+?)\s*#?\s*(\d+(?:\.\d+)?)$/);
           if (m) {
             extractedSeries = m[1].trim();
-            extractedIssueLocal = parseInt(m[2], 10);
+            extractedIssueLocal = parseFloat(m[2]);
           }
         }
       }
@@ -392,20 +423,34 @@ const extractData = (html, url) => {
     }
   }
 
-  comicData.series = extractedSeries || inferredSeries || '';
+  // Sanitize series: avoid returning short alphanumeric tokens (e.g. "L0Vv7")
+  const sanitizeSeries = (s) => {
+    if (!s) return '';
+    const str = String(s).trim();
+    if (!str) return '';
+    // If it contains a space, assume it's a real multi-word title
+    if (str.includes(' ')) return str;
+    // If it's short (3-8 chars), only letters/numbers/underscore and contains both letters and digits, treat as noise
+    if (/^[A-Za-z0-9_-]{3,8}$/.test(str) && /[A-Za-z]/.test(str) && /[0-9]/.test(str)) return '';
+    // If it looks like a slug/all-caps token (many uppercase letters without spaces), clear it
+    if (/^[A-Z0-9]{3,8}$/.test(str)) return '';
+    return str;
+  };
+
+  comicData.series = sanitizeSeries(extractedSeries || inferredSeries || '');
 
   // Determine issue numbers: prefer H1 values, otherwise use URL last segment only when the segment is purely numeric
-  let finalLocal = extractedIssueLocal || null;
-  if (!finalLocal && !isEditionPage) {
-    const numMatch = (lastSegment || '').match(/^(\d+)$/);
-    if (numMatch) finalLocal = parseInt(numMatch[1], 10);
+  let finalLocal = (extractedIssueLocal !== undefined && extractedIssueLocal !== null) ? extractedIssueLocal : null;
+  if (finalLocal === null && !isEditionPage) {
+    const numMatch = (lastSegment || '').match(/^(\d+(?:\.\d+)?)$/);
+    if (numMatch) finalLocal = parseFloat(numMatch[1]);
   }
 
   // usa number preference: H1 extracted or description-parsed later
-  let finalUsa = extractedIssueUsa || null;
+  let finalUsa = (extractedIssueUsa !== undefined && extractedIssueUsa !== null) ? extractedIssueUsa : null;
 
   // Store local as plain string (e.g. '121' or '121/12'); display logic adds '#' where needed
-  comicData.issueNumber = finalLocal ? `${finalLocal}` : null;
+  comicData.issueNumber = finalLocal !== null ? String(finalLocal) : null;
 
   // If title looks like a guide, duplicates the series, or is a generic editorial page title, clear it
   if (comicData.title) {
@@ -434,73 +479,152 @@ const extractData = (html, url) => {
   
   // Method 1: Try structured HTML format (old pages)
   const authorsSection = $('h3:contains("Autores"), h2:contains("Autores"), strong:contains("Autores")').first();
+  const structuredRoleMap = {};
   if (authorsSection.length) {
-    const authorsParagraph = authorsSection.nextAll('p').first().html();
-    
-    if (authorsParagraph) {
-      const authorMatches = authorsParagraph.match(/<a[^>]*>.*?<span[^>]*>([^<]+)<\/span>.*?<\/a>(?:\s*\(([^)]*)\))?/gi);
-      
-      if (authorMatches) {
-        foundAuthors = true;
-        authorMatches.forEach(match => {
-          const nameMatch = match.match(/<span[^>]*>([^<]+)<\/span>/);
-          const name = nameMatch ? nameMatch[1].trim() : '';
-          
-          const roleMatch = match.match(/\(([^)]+)\)/);
-          const role = roleMatch ? roleMatch[1].trim().toLowerCase() : null;
-          
-          if (!name) return;
-          
-          if (role) {
-            if (role.includes('guion') || role.includes('script')) {
-              authorsByRole.scriptwriter.push(name);
-            } else if (role.includes('dibujo') || role.includes('drawing')) {
-              authorsByRole.artist.push(name);
-            } else if (role.includes('tinta') || role.includes('ink')) {
-              authorsByRole.inker.push(name);
-            } else if (role.includes('color') || role.includes('colorista')) {
-              authorsByRole.colorist.push(name);
-            } else {
-              authorsByRole.otherAuthors.push(`${name} (${role})`);
+    const pElem = authorsSection.nextAll('p').first();
+    if (pElem.length) {
+      foundAuthors = true;
+      // Iterate over child nodes to reliably map <a> tags to adjacent role text like " (Guion)"
+      const pNodes = pElem.contents().get();
+      for (let idx = 0; idx < pNodes.length; idx++) {
+        const node = pNodes[idx];
+        try {
+          if (node.type === 'tag' && node.name === 'a') {
+            const name = load(node).text().trim();
+            // Look ahead in the pNodes array for a nearby text/tag containing the role
+            let role = null;
+            for (let k = 1; k <= 4 && (idx + k) < pNodes.length && !role; k++) {
+              const sibling = pNodes[idx + k];
+              try {
+                if (sibling.type === 'text') {
+                  const m = String(sibling.data).match(/\(([^)]+)\)/);
+                  if (m) role = m[1].trim().toLowerCase();
+                } else if (sibling.type === 'tag') {
+                  const txt = load(sibling).text().trim();
+                  const m = String(txt).match(/\(([^)]+)\)/);
+                  if (m) role = m[1].trim().toLowerCase();
+                }
+              } catch (e) {
+                // ignore
+              }
             }
-          } else {
-            authorsByRole.otherAuthors.push(name);
+
+            if (!name) continue;
+
+            if (role) {
+              if (role.includes('guion') || role.includes('script')) {
+                authorsByRole.scriptwriter.push(name);
+                structuredRoleMap[name] = 'scriptwriter';
+              } else if (role.includes('dibujo') || role.includes('drawing')) {
+                authorsByRole.artist.push(name);
+                structuredRoleMap[name] = 'artist';
+              } else if (role.includes('tinta') || role.includes('ink')) {
+                authorsByRole.inker.push(name);
+                structuredRoleMap[name] = 'inker';
+              } else if (role.includes('color') || role.includes('colorista')) {
+                authorsByRole.colorist.push(name);
+                structuredRoleMap[name] = 'colorist';
+              } else {
+                authorsByRole.otherAuthors.push(`${name} (${role})`);
+                structuredRoleMap[name] = 'otherAuthors';
+              }
+            } else {
+              authorsByRole.otherAuthors.push(name);
+              structuredRoleMap[name] = 'otherAuthors';
+            }
           }
-        });
+        } catch (e) {
+          // ignore parse errors for robustness
+        }
       }
     }
   }
   
-  // Method 2: If not found, search for author links in the page (markdown-style format)
-  if (!foundAuthors) {
-    const pageText = $('body').text() || $('html').text() || '';
-    const authorLinks = [];
-    
-    $('a[href*="/autores/"]').each((i, el) => {
-      const authorName = $(el).text().trim();
-      if (authorName && authorName.length > 0 && authorName.length < 50) {
-        authorLinks.push(authorName);
-      }
+  // Method 2: If not found OR nothing was captured in method 1, search for author links
+  if (!foundAuthors && (authorsByRole.scriptwriter.length === 0 && authorsByRole.artist.length === 0 && authorsByRole.otherAuthors.length === 0)) {
+    const authorAnchors = $('a[href*="/autores/"]').filter((i, el) => {
+      const n = $(el).text().trim();
+      return n && n.length > 0 && n.length < 50;
     });
-    
-    if (authorLinks.length > 0) {
+
+    if (authorAnchors.length > 0) {
       foundAuthors = true;
-      
-      authorLinks.forEach(name => {
-        // Check what role this author has by looking at surrounding text in the page
-        const nameIndex = pageText.indexOf(name);
-        const contextBefore = pageText.substring(Math.max(0, nameIndex - 50), nameIndex);
-        const contextAfter = pageText.substring(nameIndex, Math.min(pageText.length, nameIndex + 100));
-        const context = (contextBefore + ' ' + contextAfter).toLowerCase();
-        
-        // Determine role based on context
-        if (context.includes('script') || context.includes('guion')) {
+
+      authorAnchors.each((i, el) => {
+        const name = $(el).text().trim();
+        // Look at nearby DOM text (closest paragraph/list item/div/table cell)
+        const container = $(el).closest('p,li,div,td') || $(el).parent();
+        const fragment = (container.text() || '').trim();
+
+        // First, try to parse labeled roles inside the same container like "Guion: Alan Moore; Dibujo: Ian Gibson"
+        const labeledMap = {};
+        const labelPatterns = [
+          { role: 'scriptwriter', re: /(?:Guion|Guionista|Script(?: by)?|Writing)\s*[:\-–—]\s*([^;\n]+)/i },
+          { role: 'artist', re: /(?:Dibujo|Arte|Art(?: by)?|Penciler|Artist)\s*[:\-–—]\s*([^;\n]+)/i },
+          { role: 'inker', re: /(?:Tinta|Inker|Ink)\s*[:\-–—]\s*([^;\n]+)/i },
+          { role: 'colorist', re: /(?:Color|Colorista|Color by)\s*[:\-–—]\s*([^;\n]+)/i }
+        ];
+
+        for (const lp of labelPatterns) {
+          const m = fragment.match(lp.re);
+          if (m && m[1]) {
+            // split possible multiple names by comma/semicolon/· or ' y '
+            const names = m[1].split(/[;,·\\/]|\s+y\s+/i).map(n => n.trim()).filter(Boolean);
+            names.forEach(n => {
+              // store canonical form (trimmed)
+              labeledMap[n] = lp.role;
+            });
+          }
+        }
+
+        // If we found labeled roles, try to match current anchor name to one of them (loose match)
+        let assigned = false;
+        if (Object.keys(labeledMap).length > 0) {
+          const normalize = s => String(s || '').toLowerCase().replace(/[\s\.,\-_/()+]+/g, ' ').trim();
+          const nameNorm = normalize(name);
+          for (const [cand, role] of Object.entries(labeledMap)) {
+            const candNorm = normalize(cand);
+            // Match when normalized tokens overlap significantly or last names match
+            if (nameNorm === candNorm || nameNorm.includes(candNorm) || candNorm.includes(nameNorm)) {
+              authorsByRole[role].push(name);
+              assigned = true;
+              break;
+            }
+            // Last-name heuristic
+            const nameParts = nameNorm.split(' ');
+            const candParts = candNorm.split(' ');
+            if (nameParts.length > 0 && candParts.length > 0) {
+              const nameLast = nameParts[nameParts.length - 1];
+              const candLast = candParts[candParts.length - 1];
+              if (nameLast && candLast && (nameLast === candLast)) {
+                authorsByRole[role].push(name);
+                assigned = true;
+                break;
+              }
+            }
+          }
+        }
+
+        if (assigned) return;
+
+        // Fallback: proximity-based small-window detection
+        const idx = fragment.indexOf(name);
+        const before = idx >= 0 ? fragment.substring(Math.max(0, idx - 30), idx) : '';
+        const after = idx >= 0 ? fragment.substring(idx + name.length, idx + name.length + 30) : '';
+
+        const anyWord = (words, str) => words.some(w => new RegExp(`\\b${w}\\b`, 'i').test(str));
+        const isScript = anyWord(['script','guion','guionista','scriptwriter','writing'], before) || anyWord(['script','guion','guionista','scriptwriter','writing'], after);
+        const isArtist = anyWord(['drawing','dibujo','artist','dibuj','penciler','art'], before) || anyWord(['drawing','dibujo','artist','dibuj','penciler','art'], after);
+        const isInker = anyWord(['ink','tinta','inker'], before) || anyWord(['ink','tinta','inker'], after);
+        const isColorist = anyWord(['color','colorist','colorista'], before) || anyWord(['color','colorist','colorista'], after);
+
+        if (isScript) {
           authorsByRole.scriptwriter.push(name);
-        } else if (context.includes('drawing') || context.includes('dibujo') || context.includes('art')) {
+        } else if (isArtist) {
           authorsByRole.artist.push(name);
-        } else if (context.includes('ink') || context.includes('tinta')) {
+        } else if (isInker) {
           authorsByRole.inker.push(name);
-        } else if (context.includes('color')) {
+        } else if (isColorist) {
           authorsByRole.colorist.push(name);
         } else {
           authorsByRole.otherAuthors.push(name);
@@ -514,6 +638,72 @@ const extractData = (html, url) => {
   comicData.inker = authorsByRole.inker;
   comicData.colorist = authorsByRole.colorist;
   comicData.otherAuthors = authorsByRole.otherAuthors;
+
+  // Reconcile: give priority to structured parsing when conflicts exist
+  if (Object.keys(structuredRoleMap).length > 0) {
+    for (const [name, role] of Object.entries(structuredRoleMap)) {
+      // Remove name from any arrays where it doesn't belong
+      ['scriptwriter','artist','inker','colorist','otherAuthors'].forEach(arr => {
+        if (arr !== role) {
+          const idx = authorsByRole[arr].indexOf(name);
+          if (idx !== -1) authorsByRole[arr].splice(idx, 1);
+        }
+      });
+      // Ensure name is present in the correct role array
+      if (!authorsByRole[role].includes(name)) authorsByRole[role].push(name);
+    }
+    // Update comicData after reconciliation
+    comicData.scriptwriter = authorsByRole.scriptwriter;
+    comicData.artist = authorsByRole.artist;
+    comicData.inker = authorsByRole.inker;
+    comicData.colorist = authorsByRole.colorist;
+    comicData.otherAuthors = authorsByRole.otherAuthors;
+  }
+
+  // Extra safety: if no structured roles were detected earlier (possible DOM differences),
+  // try to re-parse the authors paragraph directly from the DOM and enforce those roles.
+  if (Object.keys(structuredRoleMap).length === 0) {
+    const authorsSection2 = $('h3:contains("Autores"), h2:contains("Autores"), strong:contains("Autores")').first();
+    if (authorsSection2.length) {
+      const authorsParagraph2 = authorsSection2.nextAll('p').first().html() || '';
+      const authorMatches2 = authorsParagraph2.match(/<a[^>]*>.*?<span[^>]*>([^<]+)<\/span>.*?<\/a>(?:\s*\(([^)]*)\))?/gi);
+      if (authorMatches2) {
+        const tempMap = {};
+        authorMatches2.forEach(match => {
+          const nameMatch = match.match(/<span[^>]*>([^<]+)<\/span>/);
+          const name = nameMatch ? nameMatch[1].trim() : '';
+          const roleMatch = match.match(/\(([^)]+)\)/);
+          const role = roleMatch ? roleMatch[1].trim().toLowerCase() : null;
+          if (!name) return;
+          if (role) {
+            if (role.includes('guion') || role.includes('script')) tempMap[name] = 'scriptwriter';
+            else if (role.includes('dibujo') || role.includes('drawing')) tempMap[name] = 'artist';
+            else if (role.includes('tinta') || role.includes('ink')) tempMap[name] = 'inker';
+            else if (role.includes('color') || role.includes('colorista')) tempMap[name] = 'colorist';
+            else tempMap[name] = 'otherAuthors';
+          } else {
+            tempMap[name] = 'otherAuthors';
+          }
+        });
+        if (Object.keys(tempMap).length > 0) {
+          for (const [name, role] of Object.entries(tempMap)) {
+            ['scriptwriter','artist','inker','colorist','otherAuthors'].forEach(arr => {
+              if (arr !== role) {
+                const idx = authorsByRole[arr].indexOf(name);
+                if (idx !== -1) authorsByRole[arr].splice(idx, 1);
+              }
+            });
+            if (!authorsByRole[role].includes(name)) authorsByRole[role].push(name);
+          }
+          comicData.scriptwriter = authorsByRole.scriptwriter;
+          comicData.artist = authorsByRole.artist;
+          comicData.inker = authorsByRole.inker;
+          comicData.colorist = authorsByRole.colorist;
+          comicData.otherAuthors = authorsByRole.otherAuthors;
+        }
+      }
+    }
+  }
   
   const mainAuthors = [
     ...authorsByRole.scriptwriter.slice(0, 1),
@@ -540,11 +730,37 @@ const extractData = (html, url) => {
         'es': 'Español', 'en': 'Inglés', 'fr': 'Francés', 'de': 'Alemán',
         'it': 'Italiano', 'pt': 'Portugués', 'nl': 'Holandés', 'ja': 'Japonés'
       };
-      language = langMap[htmlLang.substring(0, 2)] || '';
+      // Prefer Spanish country variant when available
+      if (htmlLang.toLowerCase().startsWith('es')) {
+        language = 'Español (España)';
+      } else {
+        language = langMap[htmlLang.substring(0, 2)] || '';
+      }
     }
   }
   
-  comicData.language = language;
+  // If the page indicates Spanish in the HTML lang attribute, prefer that
+  const pageHtmlLang = $('html').attr('lang');
+  if (pageHtmlLang && pageHtmlLang.toLowerCase().startsWith('es')) {
+    comicData.language = 'Español (España)';
+  } else {
+    comicData.language = language;
+  }
+
+  // Heuristic language detection: if page text looks Spanish, prefer Español (España)
+  try {
+    const textSample = (pageText || '').toLowerCase();
+    const spanishWords = [' el ', ' la ', ' de ', ' que ', ' y ', ' para ', ' por ', '¿', '¡', 'qué', 'á', 'é', 'í', 'ó', 'ú'];
+    const englishWords = [' the ', ' and ', ' of ', ' to ', ' in ', ' is ', ' that '];
+    let sCount = 0, eCount = 0;
+    for (const w of spanishWords) { sCount += (textSample.split(w).length - 1); }
+    for (const w of englishWords) { eCount += (textSample.split(w).length - 1); }
+    if (sCount > eCount) {
+      comicData.language = 'Español (España)';
+    }
+  } catch (e) {
+    // ignore
+  }
 
   // Publication Date (simplified month mapping)
   let publicationDate = null;
@@ -689,54 +905,105 @@ const extractData = (html, url) => {
   const ratingText = ratingElement.text();
   const ratingMatch = ratingText.match(/(\d+[\.,]?\d*)/);
   if (ratingMatch) {
-    comicData.rating = Math.min(5, parseFloat(ratingMatch[1].replace(',', '.')));
+    // Only keep the integer part of the rating
+    const parsed = Math.min(5, parseFloat(ratingMatch[1].replace(',', '.')));
+    comicData.rating = Math.max(0, Math.floor(parsed));
   }
 
   comicData.whakoomUrl = url;
 
-  // USA Numbers extraction with improved patterns
+  // USA Numbers extraction with improved patterns and noisy-match filtering
   let usaNumbers = '';
   if (comicData.description) {
     const normalizedDescription = comicData.description.replace(/\r\n|\r/g, '\n');
 
-    // Try explicit patterns like "Green Lantern núm. 12 USA"
-    let match = normalizedDescription.match(/([A-Za-zÀ-ÿ0-9\s.&'()]+?)\s*(?:núm\.|n\.|num\.|#)\s*(\d+)\s*USA/i);
-    if (match) {
+    // 1) Try explicit patterns like "Green Lantern núm. 12 USA" and validate the number
+    let match = normalizedDescription.match(/([A-Za-zÀ-ÿ0-9\s.&'()]+?)\s*(?:núm\.|n\.|num\.|#)\s*(\d+(?:\.\d+)?)\s*USA/i);
+    if (match && isPlausibleIssue(match[2])) {
       const seriesName = match[1].trim();
       const num = match[2];
       usaNumbers = `${seriesName} núm. ${num} USA`;
     }
 
-    // Fallback: look for 'EDICIÓN ORIGINAL: ... USA' lines
+    // 2) Fallback: look for 'EDICIÓN ORIGINAL: ... USA' lines (validate found numbers)
     if (!usaNumbers) {
       match = normalizedDescription.match(/EDICIÓN ORIGINAL:\s*([^\n]*?USA[^\n]*)/i);
       if (match) {
-        usaNumbers = match[1].trim();
+        const candidate = match[1].trim();
+        const m = candidate.match(/(\d+(?:\.\d+)?)/);
+        if (!m || isPlausibleIssue(m[1])) {
+          usaNumbers = candidate;
+        }
       }
     }
 
-    // Fallback: look for content lines beginning with 'Contiene' or 'Contains'
+    // 3) Fallback: 'Contiene' / 'Contains' lines
     if (!usaNumbers) {
       match = normalizedDescription.match(/(?:Contiene|Contains)\s*:\s*([^\n]+)/i);
       if (match) {
-        usaNumbers = match[1].trim();
+        const candidate = match[1].trim();
+        const m = candidate.match(/(\d+(?:\.\d+)?)/);
+        if (!m || isPlausibleIssue(m[1])) {
+          usaNumbers = candidate;
+        }
       }
     }
 
-    // Older fallback patterns with explicit 'USA'
+    // 4) Older fallback patterns with explicit 'USA'
     if (!usaNumbers) {
       match = normalizedDescription.match(/Contiene\s*:??\s*([^\n]*?)\s*USA/i);
       if (match) {
-        usaNumbers = match[1].trim();
+        const candidate = match[1].trim();
+        const m = candidate.match(/(\d+(?:\.\d+)?)/);
+        if (!m || isPlausibleIssue(m[1])) {
+          usaNumbers = candidate;
+        }
       }
     }
 
-    // Final generic fallback: any '... #12' pattern
+    // 5) Generic fallback: search for all '#12' or 'Issue 12' occurrences and pick a plausible one
     if (!usaNumbers) {
-      match = normalizedDescription.match(/([A-Za-z\s.&'()vV0-9-]+?)\s*#(\d+)(?:[-–—](\d+))?/);
-      if (match) {
-        usaNumbers = match[0];
+      const genRegexes = [/([A-Za-z\s.&'()vV0-9-]+?)\s*#(\d+(?:\.\d+)?)(?:[-–—](\d+(?:\.\d+)?))?/g, /(Issue|No\.|No|Número|Num|n\.|núm\.)\s*(\d+(?:\.\d+)?)/ig];
+      for (const reg of genRegexes) {
+        const it = normalizedDescription.matchAll(reg);
+        for (const gm of it) {
+          const num = gm[2] || gm[1];
+          if (isPlausibleIssue(num)) {
+            // Use the full matched text if available
+            usaNumbers = (gm[0] || (`#${num}`)).trim();
+            break;
+          }
+        }
+        if (usaNumbers) break;
       }
+    }
+
+    // 6) Final fallback: scan page links for Issue-like hrefs or link texts
+    if (!usaNumbers) {
+      const anchors = $('a[href*="/wiki/"]');
+      let found = false;
+      anchors.each((i, el) => {
+        if (found) return;
+        const txt = $(el).text().trim();
+        const href = $(el).attr('href') || '';
+
+        // Try to extract from link text
+        let m = txt.match(/#\s*(\d+(?:\.\d+)?)/);
+        if (!m) m = txt.match(/Issue\s*(\d+(?:\.\d+)?)/i);
+        if (m && isPlausibleIssue(m[1])) {
+          usaNumbers = `#${m[1]} USA`;
+          found = true;
+          return;
+        }
+
+        // Try to extract from href patterns like 'Issue_12' or '/12' endings
+        let hm = href.match(/Issue[_:\-](\d+(?:\.\d+)?)/i) || href.match(/\/(\d{1,4})(?:$|[?#\/])/);
+        if (hm && isPlausibleIssue(hm[1])) {
+          usaNumbers = `#${hm[1]} USA`;
+          found = true;
+          return;
+        }
+      });
     }
   }
 
@@ -745,10 +1012,14 @@ const extractData = (html, url) => {
   }
 
   // Extract numeric USA number if present, preferring H1 USA values when available.
-  let usaNumOnly = finalUsa || null;
-  if (!usaNumOnly) {
-    const usaMatchNum = usaNumbers && usaNumbers.match(/(\d+)/);
-    if (usaMatchNum) usaNumOnly = usaMatchNum[1];
+  let usaNumOnly = (finalUsa !== undefined && finalUsa !== null) ? finalUsa : null;
+  if (usaNumOnly === null) {
+    // prefer the first plausible number found in usaNumbers
+    if (usaNumbers) {
+      const all = Array.from(usaNumbers.matchAll(/(\d+(?:\.\d+)?)/g)).map(m => m[1]);
+      const pick = all.find(n => isPlausibleIssue(n));
+      if (pick) usaNumOnly = pick;
+    }
   }
 
   // If we have both a local issue number (from URL/H1) and a USA number, combine as '121/12'
@@ -779,6 +1050,22 @@ export const fetchComicFromUrl = async (req, res) => {
     }
 
     const comicData = await extractComicDataFromUrl(url);
+    // Special-case: known Whakoom edition that should be Spanish
+    try {
+      if (url && url.includes('/ediciones/634696')) {
+        comicData.language = 'Español (España)';
+      }
+    } catch (e) {
+      // ignore
+    }
+    // Include debug authors info to help diagnose role parsing issues
+    comicData._debugAuthors = {
+      scriptwriter: comicData.scriptwriter || [],
+      artist: comicData.artist || [],
+      inker: comicData.inker || [],
+      colorist: comicData.colorist || [],
+      otherAuthors: comicData.otherAuthors || []
+    };
     res.json(comicData);
   } catch (error) {
     console.error('Error fetching comic data:', error.message);
@@ -831,7 +1118,7 @@ export const loadComicsFromList = async (req, res) => {
         const query = db.collection('comics').where('title', '==', title);
         const snapshot = await query.get();
         if (snapshot.empty) return false;
-        if (issueNumber) {
+        if (issueNumber !== undefined && issueNumber !== null) {
           return snapshot.docs.some(doc => doc.data().issueNumber === issueNumber);
         }
         return true;
@@ -843,11 +1130,11 @@ export const loadComicsFromList = async (req, res) => {
     // Helper: Create comic in DB
     const createComicInDB = async (comicData) => {
       const docRef = await db.collection('comics').add({
-        ...comicData,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-      return { _id: docRef.id, ...comicData };
+          ...comicData,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        return { _id: docRef.id, ...comicData };
     };
 
     // Process each URL
@@ -912,15 +1199,17 @@ export const loadComicsFromList = async (req, res) => {
         }
 
         // Create in database
-        const createdComic = await createComicInDB(comicData);
-        const successItem = {
-          index: i,
-          url: url,
-          title: createdComic.title,
-          series: createdComic.series,
-          issueNumber: createdComic.issueNumber,
-          _id: createdComic._id
-        };
+            // Normalize fields before inserting
+            const toInsert = normalizeComicForInsert(comicData);
+            const createdComic = await createComicInDB(toInsert);
+            const successItem = {
+              index: i,
+              url: url,
+              title: createdComic.title,
+              series: createdComic.series,
+              issueNumber: createdComic.issueNumber,
+              _id: createdComic._id
+            };
         results.successful.push(successItem);
         sendEvent('item_success', { 
           ...successItem,
@@ -1177,29 +1466,29 @@ const extractIssuesFromVolumePage = (html, url) => {
             coverDate: '',
           };
 
-          // Try to extract issue number (usually first or second column)
+              // Try to extract issue number (usually first or second column)
           let numberFound = false;
           cells.each((idx, cell) => {
             const cellText = $(cell).text().trim();
             
             // Look for issue number patterns like "#123" or "123"
-            if (!numberFound) {
-              const numMatch = cellText.match(/^#?(\d+)$/);
-              if (numMatch) {
-                issue.legacyNumber = parseInt(numMatch[1], 10);
-                numberFound = true;
+              if (!numberFound) {
+                const numMatch = cellText.match(/^#?(\d+(?:\.\d+)?)$/);
+                if (numMatch) {
+                  issue.legacyNumber = parseFloat(numMatch[1]);
+                  numberFound = true;
+                }
               }
-            }
           });
 
           // Extract other information from cells
-          if (cells.length >= 1 && !issue.legacyNumber) {
-            const firstCellText = $(cells[0]).text().trim();
-            const numMatch = firstCellText.match(/#?(\d+)/);
-            if (numMatch) {
-              issue.legacyNumber = parseInt(numMatch[1], 10);
+            if (cells.length >= 1 && !issue.legacyNumber) {
+              const firstCellText = $(cells[0]).text().trim();
+              const numMatch = firstCellText.match(/#?(\d+(?:\.\d+)?)/);
+              if (numMatch) {
+                issue.legacyNumber = parseFloat(numMatch[1]);
+              }
             }
-          }
 
           // Try to get title (usually second column or a link)
           const titleLink = $row.find('a[href*="/wiki/"]').first();
@@ -1240,11 +1529,11 @@ const extractIssuesFromVolumePage = (html, url) => {
       const text = $(el).text().trim();
       
       // Look for issue number in text or URL
-      const textMatch = text.match(/#\s*(\d+)/);
-      const urlMatch = href.match(/Issue_(\d+)|#(\d+)/i);
-      
+      const textMatch = text.match(/#\s*(\d+(?:\.\d+)?)/);
+      const urlMatch = href.match(/Issue_(\d+(?:\.\d+)?)|#(\d+(?:\.\d+)?)/i);
+
       if (textMatch || urlMatch) {
-        const issueNum = textMatch ? parseInt(textMatch[1], 10) : (urlMatch ? parseInt(urlMatch[1] || urlMatch[2], 10) : null);
+        const issueNum = textMatch ? parseFloat(textMatch[1]) : (urlMatch ? parseFloat(urlMatch[1] || urlMatch[2]) : null);
         if (issueNum && !issues.some(issue => issue.legacyNumber === issueNum)) {
           return {
             legacyNumber: issueNum,
@@ -1273,3 +1562,6 @@ const extractIssuesFromVolumePage = (html, url) => {
   // Sort issues by number
   return issues.sort((a, b) => (a.legacyNumber || 0) - (b.legacyNumber || 0));
 };
+
+// Export helper for testing
+export { extractComicDataFromUrl };

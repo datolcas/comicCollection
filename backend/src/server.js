@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import admin from 'firebase-admin';
 import comicRoutes from './routes/comics.js';
+import { __setDb } from './controllers/comicController.js';
 import userRoutes from './routes/users.js';
 import usaVolumeRoutes from './routes/usaVolumes.js';
 import lecturasRoutes from './routes/lecturas.js';
@@ -34,6 +35,13 @@ try {
 }
 
 const db = admin.firestore();
+
+// Provide DB to controllers that may run outside the full server lifecycle (tests)
+try {
+  __setDb(db);
+} catch (e) {
+  console.warn('Could not set DB on controllers:', e.message);
+}
 
 // Routes
 app.use('/api/comics', comicRoutes);

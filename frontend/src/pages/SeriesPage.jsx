@@ -12,6 +12,8 @@ const SeriesPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredSeries, setFilteredSeries] = useState([]);
   const [expandedSeries, setExpandedSeries] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 50;
   const [selectedComic, setSelectedComic] = useState(null);
   const [editingComic, setEditingComic] = useState(null);
   const [showForm, setShowForm] = useState(false);
@@ -19,7 +21,10 @@ const SeriesPage = () => {
   const [preSelectedComicId, setPreSelectedComicId] = useState(null);
 
   useEffect(() => {
-    fetchComics();
+    // Always request the full comics list when entering the Series page
+    // so series are built from the full collection (not from any filtered view).
+    fetchComics({}, { force: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -52,12 +57,22 @@ const SeriesPage = () => {
   }, [comics]);
 
   useEffect(() => {
-    // Filtrar series por búsqueda
+    // Filtrar series por búsqueda. Only reset to page 1 when search term changes,
+    // not when `series` updates due to edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [series]);
+
+  useEffect(() => {
     const filtered = series.filter(serie =>
       serie.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
     setFilteredSeries(filtered);
-  }, [searchTerm, series]);
+    // Reset to page 1 only when the user changes the search term
+    setCurrentPage(1);
+    // We intentionally only depend on `searchTerm` here so edits that update
+    // `series` won't reset pagination.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchTerm]);
 
   const handleEdit = (comic) => {
     setEditingComic(comic);
@@ -123,42 +138,63 @@ const SeriesPage = () => {
             </p>
           </div>
         ) : (
-          filteredSeries.map(serie => (
-            <div key={serie.name} className="series-section">
-              <div
-                className="series-header-item"
-                onClick={() =>
-                  setExpandedSeries(
-                    expandedSeries === serie.name ? null : serie.name
-                  )
-                }
-              >
-                <div className="series-info-header">
-                  <h2>{serie.name}</h2>
-                  <span className="comic-count">📖 {serie.comics.length}</span>
+          (() => {
+            const totalPages = Math.max(1, Math.ceil(filteredSeries.length / PAGE_SIZE));
+            const start = (currentPage - 1) * PAGE_SIZE;
+            const pageSeries = filteredSeries.slice(start, start + PAGE_SIZE);
+            return (
+              <>
+                <div className="pagination-controls">
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>Anterior</button>
+                  <span> Página {currentPage} / {totalPages} </span>
+                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Siguiente</button>
                 </div>
-                <span className={`expand-icon ${expandedSeries === serie.name ? 'expanded' : ''}`}>
-                  ▼
-                </span>
-              </div>
 
-              {expandedSeries === serie.name && (
-                <div className="series-comics">
-                  <div className="comics-grid">
-                    {serie.comics.map(comic => (
-                      <ComicCard
-                        key={comic._id}
-                        comic={comic}
-                        onEdit={handleEdit}
-                        onDelete={handleDelete}
-                        onSelectComic={setSelectedComic}
-                      />
-                    ))}
+                {pageSeries.map(serie => (
+                  <div key={serie.name} className="series-section">
+                    <div
+                      className="series-header-item"
+                      onClick={() =>
+                        setExpandedSeries(
+                          expandedSeries === serie.name ? null : serie.name
+                        )
+                      }
+                    >
+                      <div className="series-info-header">
+                        <h2>{serie.name}</h2>
+                        <span className="comic-count">📖 {serie.comics.length}</span>
+                      </div>
+                      <span className={`expand-icon ${expandedSeries === serie.name ? 'expanded' : ''}`}>
+                        ▼
+                      </span>
+                    </div>
+
+                    {expandedSeries === serie.name && (
+                      <div className="series-comics">
+                        <div className="comics-grid">
+                          {serie.comics.map(comic => (
+                            <ComicCard
+                              key={comic._id}
+                              comic={comic}
+                              onEdit={handleEdit}
+                              onDelete={handleDelete}
+                              onSelectComic={setSelectedComic}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
+                ))}
+
+                <div className="pagination-controls bottom">
+                  <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1}>Anterior</button>
+                  <span> Página {currentPage} / {totalPages} </span>
+                  <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>Siguiente</button>
                 </div>
-              )}
-            </div>
-          ))
+              </>
+            );
+          })()
         )}
       </div>
 

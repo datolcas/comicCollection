@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import '../styles/ComicDetailModal.css';
+import { useComics } from '../services/ComicContext.jsx';
 
 const ComicDetailModal = ({ comic, onClose, onCreateLectura }) => {
   if (!comic) return null;
@@ -36,10 +37,49 @@ const ComicDetailModal = ({ comic, onClose, onCreateLectura }) => {
       ? `${comic.series}${displayIssueNumber ? ` ${displayIssueNumber}` : ''}`
       : 'Sin título';
 
+  const { updateComic, fetchComicFromUrl } = useComics();
+  const [toggling, setToggling] = useState(false);
+  const [reloading, setReloading] = useState(false);
+  const [reloadMsg, setReloadMsg] = useState(null);
+
   const handleCreateLectura = () => {
     if (onCreateLectura) {
       onCreateLectura(comic);
       onClose();
+    }
+  };
+
+  const handleToggleSold = async () => {
+    if (!comic?._id) return;
+    try {
+      setToggling(true);
+      await updateComic(comic._id, { sold: !comic.sold });
+      onClose();
+    } catch (e) {
+      // Silently fail for now; could surface error later
+      console.error('Error toggling sold:', e);
+    } finally {
+      setToggling(false);
+    }
+  };
+
+  const handleReloadFromWhakoom = async () => {
+    if (!comic?.whakoomUrl || !comic?._id) return;
+    try {
+      setReloading(true);
+      setReloadMsg(null);
+      const parsed = await fetchComicFromUrl(comic.whakoomUrl);
+      // Remove debug fields if present
+      if (parsed && parsed._debugAuthors) delete parsed._debugAuthors;
+      // Update the comic with parsed data from Whakoom
+      await updateComic(comic._id, parsed);
+      setReloadMsg('Datos recargados correctamente');
+    } catch (e) {
+      console.error('Error recargando desde Whakoom:', e);
+      setReloadMsg('Error recargando datos');
+    } finally {
+      setReloading(false);
+      setTimeout(() => setReloadMsg(null), 3000);
     }
   };
 
@@ -51,6 +91,24 @@ const ComicDetailModal = ({ comic, onClose, onCreateLectura }) => {
           {onCreateLectura && (
             <button className="modal-create-lectura" onClick={handleCreateLectura}>
               📖 Crear lectura
+            </button>
+          )}
+          <button
+            className={`modal-sold-btn ${comic.sold ? 'sold' : 'available'}`}
+            onClick={handleToggleSold}
+            disabled={toggling}
+            title={comic.sold ? 'Marcar como disponible' : 'Marcar como vendido'}
+          >
+            {comic.sold ? '🔓 Marcar disponible' : '💰 Marcar vendido'}
+          </button>
+          {comic.whakoomUrl && (
+            <button
+              className="modal-reload-whakoom"
+              onClick={handleReloadFromWhakoom}
+              disabled={reloading}
+              title="Recargar datos desde Whakoom"
+            >
+              {reloading ? 'Recargando…' : '🔄 Recargar Whakoom'}
             </button>
           )}
         </div>
@@ -207,6 +265,11 @@ const ComicDetailModal = ({ comic, onClose, onCreateLectura }) => {
                     🔗 Ver en Whakoom
                   </a>
                 </p>
+                {reloadMsg && (
+                  <p className={`reload-msg ${reloadMsg.startsWith('Error') ? 'error' : 'success'}`}>
+                    {reloadMsg}
+                  </p>
+                )}
               </div>
             )}
 

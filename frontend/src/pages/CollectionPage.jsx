@@ -18,11 +18,22 @@ const CollectionPage = () => {
   const [searchFilters, setSearchFilters] = useState({});
   const [viewMode, setViewMode] = useState('grid'); // 'grid' o 'list'
   const [selectedComics, setSelectedComics] = useState(new Set());
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
   const [addLecturaModalOpen, setAddLecturaModalOpen] = useState(false);
   const [preSelectedComicId, setPreSelectedComicId] = useState(null);
 
+  const loadPage = async (pageNumber = 1) => {
+    const response = await fetchComics({ ...searchFilters, limit: 50, page: pageNumber });
+    if (response) {
+      setPage(pageNumber);
+      setHasMore(response.hasMore ?? response.data.length === 50);
+      setSelectedComics(new Set());
+    }
+  };
+
   useEffect(() => {
-    fetchComics(searchFilters);
+    loadPage(1);
   }, [searchFilters]);
 
   const handleSearch = (filters) => {
@@ -227,6 +238,23 @@ const CollectionPage = () => {
               ))}
             </div>
           )}
+          <div className="pagination-controls">
+            <button
+              className="btn-pagination"
+              disabled={page <= 1 || loading}
+              onClick={() => loadPage(page - 1)}
+            >
+              ◀ Anterior
+            </button>
+            <span className="pagination-label">Página {page}</span>
+            <button
+              className="btn-pagination"
+              disabled={!hasMore || loading}
+              onClick={() => loadPage(page + 1)}
+            >
+              Siguiente ▶
+            </button>
+          </div>
         </>
       )}
 
@@ -240,7 +268,7 @@ const CollectionPage = () => {
 
       {addLecturaModalOpen && (
         <AddLecturaModal
-          isOpen={addLecturaModalOpen}
+          open={addLecturaModalOpen}
           onClose={() => {
             setAddLecturaModalOpen(false);
             setPreSelectedComicId(null);

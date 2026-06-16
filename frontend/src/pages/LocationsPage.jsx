@@ -18,8 +18,10 @@ const LocationsPage = () => {
   const [preSelectedComicId, setPreSelectedComicId] = useState(null);
 
   useEffect(() => {
-    fetchComics();
-  }, []);
+    if (comics.length === 0) {
+      fetchComics();
+    }
+  }, [comics.length]);
 
   useEffect(() => {
     // Extraer todas las ubicaciones y agrupar cómics por ubicación

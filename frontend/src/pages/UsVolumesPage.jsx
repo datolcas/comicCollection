@@ -27,8 +27,10 @@ const UsVolumesPage = () => {
 
   useEffect(() => {
     fetchUsVolumes();
-    fetchComics();
-  }, []);
+    if (comics.length === 0) {
+      fetchComics();
+    }
+  }, [comics.length]);
 
   const normalizeText = (text) => (text || '').toString().trim().toLowerCase();
 

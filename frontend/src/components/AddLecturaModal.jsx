@@ -2,8 +2,9 @@ import React, { useState, useContext, useEffect } from 'react';
 import { ComicContext } from '../services/ComicContext';
 import { createLectura } from '../services/lecturasService';
 
-export default function AddLecturaModal({ open, onClose, onSave, preSelectedComicId }) {
+export default function AddLecturaModal({ open, isOpen, onClose, onSave, preSelectedComicId }) {
   const { comics } = useContext(ComicContext);
+  const visible = open ?? isOpen;
   const [selectedComicId, setSelectedComicId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -13,8 +14,10 @@ export default function AddLecturaModal({ open, onClose, onSave, preSelectedComi
   useEffect(() => {
     if (preSelectedComicId) {
       setSelectedComicId(preSelectedComicId);
+    } else if (!visible) {
+      setSelectedComicId('');
     }
-  }, [preSelectedComicId, open]);
+  }, [preSelectedComicId, visible]);
 
   const handleSave = async () => {
     try {
@@ -32,7 +35,7 @@ export default function AddLecturaModal({ open, onClose, onSave, preSelectedComi
     }
   };
 
-  if (!open) return null;
+  if (!visible) return null;
 
   return (
     <div className="modal-backdrop">
