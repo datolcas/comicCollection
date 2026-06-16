@@ -73,5 +73,25 @@ server.on('error', (err) => {
   process.exit(1);
 });
 
+// Configuración de CORS
+const allowedOrigins = [
+  'https://comiccollectiondtc.onrender.com', // Tu frontend en Render
+  'http://localhost:5173'                  // Para que sigas mapeando en local si quieres
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Permitir peticiones sin origen (como apps móviles o herramientas como Postman)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Bloqueado por CORS: Origen no permitido'));
+    }
+  },
+  credentials: true
+}));
+
 export default app;
 export { db };
