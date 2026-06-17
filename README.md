@@ -94,6 +94,47 @@ npm run dev
 
 The app will run on `http://localhost:5173`
 
+### Combined dev (frontend + backend)
+
+From the repository root you can install and run both services together using the provided script:
+
+```bash
+npm install        # installs root dev deps (concurrently) and you should also run installs in frontend/backend
+npm run comicCollectionDatolcas
+```
+
+- This runs the backend dev server (`nodemon`) and the frontend dev server (`vite`) in parallel using `concurrently`.
+- The backend default port is `5000`. If that port is in use the backend will fail to start — stop the process using that port or set the `PORT` env var before starting.
+- Vite may auto-select another available port (e.g. `5174`, `5175`) if `5173` is occupied; check the console for the actual URL.
+
+If you prefer to run the services separately use the commands in the Development Mode section above.
+
+### Environment / Deployment notes for Vite
+
+- The frontend reads `VITE_API_URL` at build time. For local development the project includes `frontend/.env.development` with:
+
+```
+VITE_API_URL=http://localhost:5000/api
+```
+
+- For production, set `VITE_API_URL` to your backend URL (example):
+
+```
+VITE_API_URL=https://comiccollectionbackend.onrender.com/api
+```
+
+- Important: Vite inlines `VITE_` variables at build time. If you change `VITE_API_URL` in your hosting platform (Render, Netlify, Vercel, etc.) you must rebuild the frontend for the change to take effect.
+
+### Docker Compose
+
+The included `docker-compose.yml` exposes the backend on `5000` and the frontend on `5173`. You can override the `VITE_API_URL` when running compose if needed:
+
+```bash
+VITE_API_URL=https://comiccollectionbackend.onrender.com/api docker-compose up --build
+```
+
+This will build and run both services inside containers and wire the environment variable into the frontend container.
+
 ### Production Build
 
 **Frontend:**
