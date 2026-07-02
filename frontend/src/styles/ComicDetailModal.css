@@ -11,6 +11,7 @@
   z-index: 1000;
   padding: 1rem;
   animation: fadeIn 0.3s ease;
+  overflow-y: auto;
 }
 
 @keyframes fadeIn {
@@ -32,6 +33,14 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   position: relative;
   animation: slideIn 0.3s ease;
+}
+
+@media (max-width: 640px) {
+  .modal-content {
+    max-width: 95vw;
+    border-radius: 0.5rem;
+    max-height: 95vh;
+  }
 }
 
 @keyframes slideIn {
@@ -68,6 +77,16 @@
   height: 2.5rem;
   border-radius: 50%;
   transition: background-color 0.2s ease;
+  min-height: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 640px) {
+  .modal-close {
+    width: 2rem;
+    height: 2rem;
+    font-size: 1.25rem;
+  }
 }
 
 .modal-close:hover {

@@ -27,6 +27,14 @@
   border-radius: 8px;
   background-color: var(--input-bg);
   color: var(--text-primary);
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .usa-search input {
+    max-width: 100%;
+    font-size: 16px;
+  }
 }
 
 .usa-add-volume-section,
@@ -65,6 +73,7 @@
   background: var(--primary-color);
   color: white;
   cursor: pointer;
+  min-height: 44px;
 }
 
 .usa-delete-volume-btn {

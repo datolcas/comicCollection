@@ -11,13 +11,22 @@
   font-size: 1rem;
   border: 1px solid var(--border-color);
   border-radius: 0.375rem;
+  min-height: 44px;
+}
+
+@media (max-width: 640px) {
+  .search-input {
+    font-size: 16px;
+  }
 }
 
 .filter-toggle {
   align-self: flex-start;
   background-color: var(--card-bg);
   border: 1px solid var(--border-color);
-  padding: 0.5rem 1rem;
+  padding: 0.75rem 1rem;
+  min-height: 44px;
+  font-weight: 500;
 }
 
 .filter-toggle:hover {
@@ -30,7 +39,14 @@
   border-radius: 0.375rem;
   border: 1px solid var(--border-color);
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+ 
+
+@media (max-width: 640px) {
+  .filters-panel {
+    grid-template-columns: 1fr;
+    padding: 0.75rem;
+  }
+} grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1rem;
 }
 

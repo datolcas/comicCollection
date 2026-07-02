@@ -34,6 +34,14 @@ button {
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
   transition: all 0.3s ease;
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 640px) {
+  button {
+    font-size: 0.95rem;
+  }
 }
 
 .btn-primary {
@@ -66,15 +74,22 @@ button {
 }
 
 input, select, textarea {
-  padding: 0.5rem;
+  padding: 0.75rem;
   border: 1px solid var(--border-color);
   border-radius: 0.375rem;
   font-size: 1rem;
   font-family: inherit;
+  min-height: 44px;
 }
 
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+@media (max-width: 640px) {
+  input, select {
+    font-size: 16px;
+  }
 }
