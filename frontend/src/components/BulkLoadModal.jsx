@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useComics } from '../services/ComicContext';
+import api from '../services/api';
 import '../styles/BulkLoadModal.css';
 
 const BulkLoadModal = ({ isOpen, onClose }) => {
@@ -40,7 +41,7 @@ const BulkLoadModal = ({ isOpen, onClose }) => {
 
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:5000/api/comics/load-from-list', {
+      const response = await fetch(`${api.defaults.baseURL}/comics/load-from-list`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ urls })
@@ -158,7 +159,7 @@ const BulkLoadModal = ({ isOpen, onClose }) => {
   const handleClose = () => {
     // Si hay cómics cargados exitosamente, refrescar la colección
     if (progress?.successful?.length > 0) {
-      fetchComics();
+      fetchComics({}, { force: true });
     }
     setUrlText('');
     setResults(null);

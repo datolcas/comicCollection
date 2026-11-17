@@ -1,14 +1,44 @@
 import express from 'express';
 import { db } from '../server.js';
+import { comicsCache, lecturasCache } from '../services/collectionCache.js';
 
 const router = express.Router();
 const COLLECTION = 'lecturas';
+
+const toIso = (v) => {
+  if (!v) return null;
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === 'object' && (v._seconds || v.seconds)) {
+    return new Date((v._seconds || v.seconds) * 1000).toISOString();
+  }
+  return v;
+};
+
+// Build the client representation: dates as ISO strings and the comic resolved
+// from the in-memory comics cache (no extra Firestore reads).
+const toClient = async (lectura) => {
+  const stored = lectura.comic;
+  let comicData = null;
+  if (typeof stored === 'string') {
+    comicData = await comicsCache.get(stored);
+  } else if (stored && typeof stored === 'object') {
+    comicData = stored;
+  }
+  return {
+    ...lectura,
+    comic: comicData,
+    startDate: toIso(lectura.startDate),
+    endDate: toIso(lectura.endDate),
+    createdAt: toIso(lectura.createdAt),
+    updatedAt: toIso(lectura.updatedAt),
+  };
+};
 
 // Crear lectura
 router.post('/', async (req, res) => {
   try {
     const { comic, startDate, endDate } = req.body;
-    
+
     if (!comic || !startDate) {
       return res.status(400).json({ error: 'Se requieren comic y startDate' });
     }
@@ -25,28 +55,9 @@ router.post('/', async (req, res) => {
     };
 
     const docRef = await db.collection(COLLECTION).add(lecturaData);
-    
-    // Obtener el documento creado con la información del cómic
-    let comicData = null;
-    if (comicId) {
-      const comicDoc = await db.collection('comics').doc(comicId).get();
-      comicData = comicDoc.exists ? { _id: comicDoc.id, ...comicDoc.data() } : null;
-    } else if (typeof comic === 'object') {
-      comicData = comic;
-    }
+    const cached = lecturasCache.set(docRef.id, lecturaData);
 
-    const resp = {
-      _id: docRef.id,
-      ...lecturaData,
-      comic: comicData,
-    };
-    // Normalize date fields to ISO strings for the client
-    resp.startDate = resp.startDate instanceof Date ? resp.startDate.toISOString() : resp.startDate;
-    resp.endDate = resp.endDate instanceof Date ? resp.endDate.toISOString() : resp.endDate;
-    resp.createdAt = resp.createdAt instanceof Date ? resp.createdAt.toISOString() : resp.createdAt;
-    resp.updatedAt = resp.updatedAt instanceof Date ? resp.updatedAt.toISOString() : resp.updatedAt;
-
-    res.status(201).json(resp);
+    res.status(201).json(await toClient(cached));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -55,41 +66,8 @@ router.post('/', async (req, res) => {
 // Obtener lecturas
 router.get('/', async (req, res) => {
   try {
-    const snapshot = await db.collection(COLLECTION).get();
-    const lecturas = [];
-
-    for (const doc of snapshot.docs) {
-      const lecturaData = doc.data();
-      // lecturaData.comic may be an id string or an embedded object
-      let comicData = null;
-      const storedComic = lecturaData.comic;
-      if (typeof storedComic === 'string') {
-        const comicDoc = await db.collection('comics').doc(storedComic).get();
-        comicData = comicDoc.exists ? { _id: comicDoc.id, ...comicDoc.data() } : null;
-      } else if (typeof storedComic === 'object') {
-        comicData = storedComic;
-      }
-
-      const item = { _id: doc.id, ...lecturaData, comic: comicData };
-      // Normalize Firestore Timestamp objects to ISO strings
-      const norm = (v) => {
-        if (!v) return null;
-        if (v instanceof Date) return v.toISOString();
-        if (v._seconds || v.seconds) {
-          const secs = v._seconds || v.seconds;
-          return new Date(secs * 1000).toISOString();
-        }
-        return v;
-      };
-      item.startDate = norm(item.startDate);
-      item.endDate = norm(item.endDate);
-      item.createdAt = norm(item.createdAt);
-      item.updatedAt = norm(item.updatedAt);
-
-      lecturas.push(item);
-    }
-
-    res.json(lecturas);
+    const lecturas = await lecturasCache.all();
+    res.json(await Promise.all(lecturas.map(toClient)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -104,6 +82,11 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Se requiere startDate' });
     }
 
+    const existing = await lecturasCache.get(req.params.id);
+    if (!existing) {
+      return res.status(404).json({ error: 'Lectura no encontrada' });
+    }
+
     const updateData = {
       startDate: new Date(startDate),
       endDate: endDate ? new Date(endDate) : null,
@@ -111,17 +94,10 @@ router.put('/:id', async (req, res) => {
     };
 
     await db.collection(COLLECTION).doc(req.params.id).update(updateData);
-    
-    const doc = await db.collection(COLLECTION).doc(req.params.id).get();
-    const lecturaData = doc.data();
-    const comicDoc = await db.collection('comics').doc(lecturaData.comic).get();
-    const comicData = comicDoc.exists ? { _id: comicDoc.id, ...comicDoc.data() } : null;
+    lecturasCache.merge(req.params.id, updateData);
 
-    res.json({
-      _id: doc.id,
-      ...lecturaData,
-      comic: comicData,
-    });
+    const updated = (await lecturasCache.get(req.params.id)) || { ...existing, ...updateData };
+    res.json(await toClient(updated));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -131,6 +107,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     await db.collection(COLLECTION).doc(req.params.id).delete();
+    lecturasCache.remove(req.params.id);
     res.json({ message: 'Lectura eliminada' });
   } catch (err) {
     res.status(500).json({ error: err.message });

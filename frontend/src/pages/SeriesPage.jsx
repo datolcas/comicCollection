@@ -21,9 +21,8 @@ const SeriesPage = () => {
   const [preSelectedComicId, setPreSelectedComicId] = useState(null);
 
   useEffect(() => {
-    // Always request the full comics list when entering the Series page
-    // so series are built from the full collection (not from any filtered view).
-    fetchComics({}, { force: true });
+    // Loads the full collection once (no-op if already loaded)
+    fetchComics();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -203,6 +202,7 @@ const SeriesPage = () => {
           comic={selectedComic}
           onClose={() => setSelectedComic(null)}
           onCreateLectura={handleCreateLectura}
+          onEdit={handleEdit}
         />
       )}
 

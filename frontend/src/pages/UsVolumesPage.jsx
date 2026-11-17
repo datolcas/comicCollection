@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useComics } from '../services/ComicContext';
 import ComicDetailModal from '../components/ComicDetailModal';
+import ComicForm from '../components/ComicForm';
 import AddLecturaModal from '../components/AddLecturaModal';
 import '../styles/UsVolumesPage.css';
 
@@ -13,6 +14,7 @@ const UsVolumesPage = () => {
     fetchUsVolumes,
     createOrUpdateUsVolume,
     deleteUsVolume,
+    updateComic,
   } = useComics();
   const [searchTerm, setSearchTerm] = useState('');
   const [volumeUrl, setVolumeUrl] = useState('');
@@ -22,15 +24,17 @@ const UsVolumesPage = () => {
   const [volumeIssues, setVolumeIssues] = useState({}); // Cache for fetched issues
   const [fetchingIssues, setFetchingIssues] = useState({});
   const [selectedComic, setSelectedComic] = useState(null);
+  const [editingComic, setEditingComic] = useState(null);
+  const [showForm, setShowForm] = useState(false);
   const [addLecturaModalOpen, setAddLecturaModalOpen] = useState(false);
   const [preSelectedComicId, setPreSelectedComicId] = useState(null);
 
   useEffect(() => {
+    // Both are loaded once and then kept in sync locally (no-op if already loaded)
     fetchUsVolumes();
-    if (comics.length === 0) {
-      fetchComics();
-    }
-  }, [comics.length]);
+    fetchComics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const normalizeText = (text) => (text || '').toString().trim().toLowerCase();
 
@@ -301,6 +305,21 @@ const UsVolumesPage = () => {
     setSelectedComic(null);
   };
 
+  const handleEdit = (comic) => {
+    setEditingComic(comic);
+    setShowForm(true);
+  };
+
+  const handleEditComic = async (data) => {
+    try {
+      await updateComic(editingComic._id, data);
+      setShowForm(false);
+      setEditingComic(null);
+    } catch (err) {
+      alert('Error al actualizar cómic: ' + err.message);
+    }
+  };
+
   const visibleVolumes = usVolumes.filter((volume) =>
     volume.title.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -481,6 +500,18 @@ const UsVolumesPage = () => {
           comic={selectedComic}
           onClose={() => setSelectedComic(null)}
           onCreateLectura={handleCreateLectura}
+          onEdit={handleEdit}
+        />
+      )}
+
+      {showForm && (
+        <ComicForm
+          comic={editingComic}
+          onSubmit={editingComic ? handleEditComic : undefined}
+          onCancel={() => {
+            setShowForm(false);
+            setEditingComic(null);
+          }}
         />
       )}
 

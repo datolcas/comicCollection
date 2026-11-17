@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import '../styles/ComicDetailModal.css';
 import { useComics } from '../services/ComicContext.jsx';
 
-const ComicDetailModal = ({ comic, onClose, onCreateLectura }) => {
+const ComicDetailModal = ({ comic, onClose, onCreateLectura, onEdit }) => {
   if (!comic) return null;
 
   const getStatusLabel = (status) => {
@@ -49,6 +49,13 @@ const ComicDetailModal = ({ comic, onClose, onCreateLectura }) => {
     }
   };
 
+  const handleEditComic = () => {
+    if (onEdit) {
+      onEdit(comic);
+      onClose();
+    }
+  };
+
   const handleToggleSold = async () => {
     if (!comic?._id) return;
     try {
@@ -88,6 +95,11 @@ const ComicDetailModal = ({ comic, onClose, onCreateLectura }) => {
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <button className="modal-close" onClick={onClose}>✕</button>
+          {onEdit && (
+            <button className="modal-edit-btn" onClick={handleEditComic} title="Editar cómic">
+              ✏️ Editar
+            </button>
+          )}
           {onCreateLectura && (
             <button className="modal-create-lectura" onClick={handleCreateLectura}>
               📖 Crear lectura

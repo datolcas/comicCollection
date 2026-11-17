@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useComics } from '../services/ComicContext';
 import ComicCard from '../components/ComicCard';
 import ComicListRow from '../components/ComicListRow';
@@ -8,6 +8,50 @@ import AddLecturaModal from '../components/AddLecturaModal';
 import BulkLoadModal from '../components/BulkLoadModal';
 import SearchBar from '../components/SearchBar';
 import '../styles/CollectionPage.css';
+
+const PAGE_SIZE = 50;
+
+const toMillis = (v) => {
+  if (!v) return 0;
+  if (typeof v === 'object' && (v.seconds || v._seconds)) return (v.seconds || v._seconds) * 1000;
+  const t = new Date(v).getTime();
+  return Number.isNaN(t) ? 0 : t;
+};
+
+const includesText = (value, text) => {
+  if (Array.isArray(value)) return value.some((v) => includesText(v, text));
+  return String(value || '').toLowerCase().includes(text);
+};
+
+// Same filters the API used to apply, now done in memory over the full collection
+const filterAndSortComics = (comics, filters) => {
+  const { search, author, series, status, sort } = filters;
+  let result = comics;
+
+  if (status) result = result.filter((c) => c.readingStatus === status);
+  if (author) {
+    const a = author.trim().toLowerCase();
+    result = result.filter((c) =>
+      [c.author, c.scriptwriter, c.artist, c.inker, c.colorist, c.otherAuthors].some((v) => includesText(v, a))
+    );
+  }
+  if (series) {
+    const s = series.trim().toLowerCase();
+    result = result.filter((c) => includesText(c.series, s));
+  }
+  if (search) {
+    const q = search.trim().toLowerCase();
+    result = result.filter(
+      (c) => includesText(c.title, q) || includesText(c.author, q) || includesText(c.series, q)
+    );
+  }
+
+  result = [...result];
+  if (sort === 'rating') result.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+  else if (sort === 'title') result.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+  else result.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
+  return result;
+};
 
 const CollectionPage = () => {
   const { comics, loading, error, fetchComics, addComic, updateComic, deleteComic } = useComics();
@@ -19,17 +63,27 @@ const CollectionPage = () => {
   const [viewMode, setViewMode] = useState('grid'); // 'grid' o 'list'
   const [selectedComics, setSelectedComics] = useState(new Set());
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
   const [addLecturaModalOpen, setAddLecturaModalOpen] = useState(false);
   const [preSelectedComicId, setPreSelectedComicId] = useState(null);
 
-  const loadPage = async (pageNumber = 1) => {
-    const response = await fetchComics({ ...searchFilters, limit: 50, page: pageNumber });
-    if (response) {
-      setPage(pageNumber);
-      setHasMore(response.hasMore ?? response.data.length === 50);
-      setSelectedComics(new Set());
-    }
+  useEffect(() => {
+    // Loads the full collection once (no-op if already loaded)
+    fetchComics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filteredComics = useMemo(
+    () => filterAndSortComics(comics, searchFilters),
+    [comics, searchFilters]
+  );
+  const totalPages = Math.max(1, Math.ceil(filteredComics.length / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageComics = filteredComics.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const hasMore = currentPage < totalPages;
+
+  const loadPage = (pageNumber) => {
+    setPage(pageNumber);
+    setSelectedComics(new Set());
   };
 
   useEffect(() => {
@@ -95,10 +149,10 @@ const CollectionPage = () => {
   };
 
   const handleSelectAll = () => {
-    if (selectedComics.size === comics.length) {
+    if (selectedComics.size === pageComics.length) {
       setSelectedComics(new Set());
     } else {
-      setSelectedComics(new Set(comics.map(c => c._id)));
+      setSelectedComics(new Set(pageComics.map(c => c._id)));
     }
   };
 
@@ -196,11 +250,15 @@ const CollectionPage = () => {
           <p>No hay cómics aún. ¡Comienza a construir tu colección!</p>
           <button className="btn-primary" onClick={() => setShowForm(true)}>Agregar Tu Primer Cómic</button>
         </div>
+      ) : filteredComics.length === 0 ? (
+        <div className="empty-state">
+          <p>No hay cómics que coincidan con la búsqueda.</p>
+        </div>
       ) : (
         <>
           {viewMode === 'grid' ? (
             <div className="comics-grid">
-              {comics.map(comic => (
+              {pageComics.map(comic => (
                 <ComicCard
                   key={comic._id}
                   comic={comic}
@@ -215,7 +273,7 @@ const CollectionPage = () => {
               <div className="list-header">
                 <input 
                   type="checkbox" 
-                  checked={selectedComics.size === comics.length && comics.length > 0}
+                  checked={selectedComics.size === pageComics.length && pageComics.length > 0}
                   onChange={handleSelectAll}
                   className="select-all-checkbox"
                   title="Seleccionar todos"
@@ -226,7 +284,7 @@ const CollectionPage = () => {
                 <div className="col-date">Fecha</div>
                 <div className="col-actions">Acciones</div>
               </div>
-              {comics.map(comic => (
+              {pageComics.map(comic => (
                 <ComicListRow
                   key={comic._id}
                   comic={comic}
@@ -241,16 +299,16 @@ const CollectionPage = () => {
           <div className="pagination-controls">
             <button
               className="btn-pagination"
-              disabled={page <= 1 || loading}
-              onClick={() => loadPage(page - 1)}
+              disabled={currentPage <= 1}
+              onClick={() => loadPage(currentPage - 1)}
             >
               ◀ Anterior
             </button>
-            <span className="pagination-label">Página {page}</span>
+            <span className="pagination-label">Página {currentPage} de {totalPages} ({filteredComics.length} cómics)</span>
             <button
               className="btn-pagination"
-              disabled={!hasMore || loading}
-              onClick={() => loadPage(page + 1)}
+              disabled={!hasMore}
+              onClick={() => loadPage(currentPage + 1)}
             >
               Siguiente ▶
             </button>
@@ -263,6 +321,11 @@ const CollectionPage = () => {
           comic={selectedComic}
           onClose={() => setSelectedComic(null)}
           onCreateLectura={handleCreateLectura}
+          onEdit={(comic) => {
+            setEditingComic(comic);
+            setShowForm(true);
+            setSelectedComic(null);
+          }}
         />
       )}
 

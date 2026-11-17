@@ -2,24 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { useComics } from '../services/ComicContext';
 import ComicCard from '../components/ComicCard';
 import ComicDetailModal from '../components/ComicDetailModal';
+import ComicForm from '../components/ComicForm';
 import AddLecturaModal from '../components/AddLecturaModal';
 import '../styles/AuthorsPage.css';
 
 const AuthorsPage = () => {
-  const { comics, fetchComics } = useComics();
+  const { comics, fetchComics, updateComic } = useComics();
   const [authors, setAuthors] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredAuthors, setFilteredAuthors] = useState([]);
   const [expandedAuthor, setExpandedAuthor] = useState(null);
   const [selectedComic, setSelectedComic] = useState(null);
+  const [editingComic, setEditingComic] = useState(null);
+  const [showForm, setShowForm] = useState(false);
   const [addLecturaModalOpen, setAddLecturaModalOpen] = useState(false);
   const [preSelectedComicId, setPreSelectedComicId] = useState(null);
 
   useEffect(() => {
-    if (comics.length === 0) {
-      fetchComics();
-    }
-  }, [comics.length]);
+    // Loads the full collection once (no-op if already loaded)
+    fetchComics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Extraer todos los autores y agrupar cómics por autor
@@ -104,11 +107,6 @@ const AuthorsPage = () => {
     setFilteredAuthors(filtered);
   }, [searchTerm, authors]);
 
-  const handleEdit = (comic) => {
-    // Navegar a editar (esto se implementaría con un modal o navegación)
-    console.log('Editar:', comic);
-  };
-
   const handleDelete = (comicId) => {
     // Implementar eliminación
     console.log('Eliminar:', comicId);
@@ -118,6 +116,21 @@ const AuthorsPage = () => {
     setPreSelectedComicId(comic._id);
     setAddLecturaModalOpen(true);
     setSelectedComic(null);
+  };
+
+  const handleEdit = (comic) => {
+    setEditingComic(comic);
+    setShowForm(true);
+  };
+
+  const handleEditComic = async (data) => {
+    try {
+      await updateComic(editingComic._id, data);
+      setShowForm(false);
+      setEditingComic(null);
+    } catch (err) {
+      alert('Error al actualizar cómic: ' + err.message);
+    }
   };
 
   return (
@@ -192,6 +205,18 @@ const AuthorsPage = () => {
           comic={selectedComic}
           onClose={() => setSelectedComic(null)}
           onCreateLectura={handleCreateLectura}
+          onEdit={handleEdit}
+        />
+      )}
+
+      {showForm && (
+        <ComicForm
+          comic={editingComic}
+          onSubmit={editingComic ? handleEditComic : undefined}
+          onCancel={() => {
+            setShowForm(false);
+            setEditingComic(null);
+          }}
         />
       )}
 

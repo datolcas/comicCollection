@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useComics } from '../services/ComicContext';
 import ComicCard from '../components/ComicCard';
 import ComicDetailModal from '../components/ComicDetailModal';
+import ComicForm from '../components/ComicForm';
 import AddLecturaModal from '../components/AddLecturaModal';
 import '../styles/LocationsPage.css';
 
 const LocationsPage = () => {
-  const { comics, fetchComics } = useComics();
+  const { comics, fetchComics, updateComic } = useComics();
   const [locations, setLocations] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredLocations, setFilteredLocations] = useState([]);
@@ -14,14 +15,16 @@ const LocationsPage = () => {
   const [newLocation, setNewLocation] = useState('');
   const [showNewLocationForm, setShowNewLocationForm] = useState(false);
   const [selectedComic, setSelectedComic] = useState(null);
+  const [editingComic, setEditingComic] = useState(null);
+  const [showForm, setShowForm] = useState(false);
   const [addLecturaModalOpen, setAddLecturaModalOpen] = useState(false);
   const [preSelectedComicId, setPreSelectedComicId] = useState(null);
 
   useEffect(() => {
-    if (comics.length === 0) {
-      fetchComics();
-    }
-  }, [comics.length]);
+    // Loads the full collection once (no-op if already loaded)
+    fetchComics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Extraer todas las ubicaciones y agrupar cómics por ubicación
@@ -63,10 +66,6 @@ const LocationsPage = () => {
     }
   };
 
-  const handleEdit = (comic) => {
-    console.log('Editar:', comic);
-  };
-
   const handleDelete = (comicId) => {
     console.log('Eliminar:', comicId);
   };
@@ -75,6 +74,21 @@ const LocationsPage = () => {
     setPreSelectedComicId(comic._id);
     setAddLecturaModalOpen(true);
     setSelectedComic(null);
+  };
+
+  const handleEdit = (comic) => {
+    setEditingComic(comic);
+    setShowForm(true);
+  };
+
+  const handleEditComic = async (data) => {
+    try {
+      await updateComic(editingComic._id, data);
+      setShowForm(false);
+      setEditingComic(null);
+    } catch (err) {
+      alert('Error al actualizar cómic: ' + err.message);
+    }
   };
 
   return (
@@ -154,6 +168,18 @@ const LocationsPage = () => {
           comic={selectedComic}
           onClose={() => setSelectedComic(null)}
           onCreateLectura={handleCreateLectura}
+          onEdit={handleEdit}
+        />
+      )}
+
+      {showForm && (
+        <ComicForm
+          comic={editingComic}
+          onSubmit={editingComic ? handleEditComic : undefined}
+          onCancel={() => {
+            setShowForm(false);
+            setEditingComic(null);
+          }}
         />
       )}
 

@@ -1,58 +1,50 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useRef, useMemo } from 'react';
 import api from './api';
 
 const ComicContext = createContext();
 
 export const ComicProvider = ({ children }) => {
-  const [comics, setComics] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // Full collection (including sold comics), loaded once and kept in sync locally
+  // after every create/update/delete so navigating between pages costs no requests.
+  const [allComics, setAllComics] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statistics, setStatistics] = useState(null);
   const [usVolumes, setUsVolumes] = useState([]);
   const [volumeLoading, setVolumeLoading] = useState(false);
-  const [lastComicsQuery, setLastComicsQuery] = useState('');
-  const [comicsHasMore, setComicsHasMore] = useState(false);
-  const comicsCacheByQuery = useRef({});
+  const comicsLoaded = useRef(false);
+  const comicsRequest = useRef(null);
+  const volumesLoaded = useRef(false);
 
-  const clearComicsCache = () => {
-    comicsCacheByQuery.current = {};
-    setLastComicsQuery('');
-    setComicsHasMore(false);
-  };
+  // Sold comics are hidden everywhere in the UI
+  const comics = useMemo(() => allComics.filter((c) => c.sold !== true), [allComics]);
 
-  const fetchComics = async (filters = {}, options = {}) => {
+  // Loads the whole collection once. Filters are applied client-side by each page,
+  // so the `filters` argument is ignored (kept for backwards compatibility).
+  const fetchComics = async (_filters = {}, options = {}) => {
     const { force = false } = options;
-    const params = new URLSearchParams(filters).toString();
-    const queryKey = params || '__all__';
-
-    if (!force && comicsCacheByQuery.current[queryKey]) {
-      const cached = comicsCacheByQuery.current[queryKey];
-      setComics(cached.data);
-      setComicsHasMore(cached.hasMore);
-      setLastComicsQuery(queryKey);
-      return cached;
-    }
+    if (comicsLoaded.current && !force) return { data: comics };
+    if (comicsRequest.current) return comicsRequest.current;
 
     setLoading(true);
-    try {
-      const url = params ? `/comics?${params}` : '/comics';
-      const response = await api.get(url);
-      const responseData = response.data;
-      const comicsData = Array.isArray(responseData) ? responseData : responseData.data;
-      const hasMore = responseData && !Array.isArray(responseData) ? responseData.hasMore : false;
-      setComics(comicsData);
-      setComicsHasMore(hasMore);
-      setLastComicsQuery(queryKey);
-      comicsCacheByQuery.current[queryKey] = { data: comicsData, hasMore };
-      setError(null);
-      return { data: comicsData, hasMore };
-    } catch (err) {
-      const errorMessage = err.response?.data?.message || err.message || 'Error al cargar cómics';
-      setError(errorMessage);
-      return { data: [], hasMore: false };
-    } finally {
-      setLoading(false);
-    }
+    comicsRequest.current = (async () => {
+      try {
+        const response = await api.get('/comics?sold=true');
+        const data = Array.isArray(response.data) ? response.data : response.data.data;
+        setAllComics(data);
+        comicsLoaded.current = true;
+        setError(null);
+        return { data: data.filter((c) => c.sold !== true) };
+      } catch (err) {
+        const errorMessage = err.response?.data?.message || err.message || 'Error al cargar cómics';
+        setError(errorMessage);
+        return { data: [] };
+      } finally {
+        comicsRequest.current = null;
+        setLoading(false);
+      }
+    })();
+    return comicsRequest.current;
   };
 
   const fetchStatistics = async () => {
@@ -67,8 +59,7 @@ export const ComicProvider = ({ children }) => {
   const addComic = async (comic) => {
     try {
       const response = await api.post('/comics', comic);
-      clearComicsCache();
-      setComics((prevComics) => [...prevComics, response.data]);
+      setAllComics((prev) => [response.data, ...prev]);
       return response.data;
     } catch (err) {
       const errorMessage = err.response?.data?.message || err.message || 'Error al agregar el cómic';
@@ -80,8 +71,7 @@ export const ComicProvider = ({ children }) => {
   const updateComic = async (id, comic) => {
     try {
       const response = await api.put(`/comics/${id}`, comic);
-      clearComicsCache();
-      setComics((prevComics) => prevComics.map(c => c._id === id ? response.data : c));
+      setAllComics((prev) => prev.map((c) => (c._id === id ? response.data : c)));
       return response.data;
     } catch (err) {
       setError(err.message);
@@ -92,8 +82,7 @@ export const ComicProvider = ({ children }) => {
   const deleteComic = async (id) => {
     try {
       await api.delete(`/comics/${id}`);
-      clearComicsCache();
-      setComics(prevComics => prevComics.filter(c => c._id !== id));
+      setAllComics((prev) => prev.filter((c) => c._id !== id));
     } catch (err) {
       setError(err.message);
       throw err;
@@ -165,7 +154,7 @@ export const ComicProvider = ({ children }) => {
   const createOrUpdateUsVolume = async (url) => {
     try {
       const response = await api.post('/usa-volumes', { url });
-      await fetchUsVolumes();
+      await fetchUsVolumes({ force: true });
       return response.data;
     } catch (err) {
       const errorMessage = err.response?.data?.message || err.message || 'Error al guardar el volumen';
@@ -185,11 +174,13 @@ export const ComicProvider = ({ children }) => {
     }
   };
 
-  const fetchUsVolumes = async () => {
+  const fetchUsVolumes = async (options = {}) => {
+    if (volumesLoaded.current && !options.force) return usVolumes;
     setVolumeLoading(true);
     try {
       const response = await api.get('/usa-volumes');
       setUsVolumes(response.data);
+      volumesLoaded.current = true;
       setError(null);
       return response.data;
     } catch (err) {

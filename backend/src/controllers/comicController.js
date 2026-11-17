@@ -1,71 +1,24 @@
+import { normalizeComicForInsert } from '../utils/normalizeComic.js';
+import { comicsCache, setCacheDb, isDuplicateComic } from '../services/collectionCache.js';
+
 // DB is injected from server startup or tests via __setDb
 let DB = null;
-export const __setDb = (mockDb) => {
-  DB = mockDb;
+export const __setDb = (db) => {
+  DB = db;
+  setCacheDb(db);
 };
 
 const COLLECTION = 'comics';
 
-// Simple in-memory cache
-let comicsCache = null;
-let cacheTimestamp = null;
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// Fields the client must never overwrite on update
+const PROTECTED_FIELDS = ['_id', 'createdAt'];
 
-const isCacheValid = () => {
-  return comicsCache && cacheTimestamp && (Date.now() - cacheTimestamp) < CACHE_TTL;
-};
-
-const getCachedComics = () => {
-  if (isCacheValid()) {
-    console.log('Returning cached comics');
-    return comicsCache;
-  }
-  return null;
-};
-
-const setCachedComics = (comics) => {
-  comicsCache = comics;
-  cacheTimestamp = Date.now();
-  console.log('Comics cached');
-};
-
-const invalidateCache = () => {
-  comicsCache = null;
-  cacheTimestamp = null;
-};
-
-const checkDuplicateComic = async (title, issueNumber) => {
-  try {
-    // Query by title (case-insensitive comparison will be done in JavaScript)
-    const query = DB.collection(COLLECTION).where('title', '==', title);
-    const snapshot = await query.get();
-
-    if (snapshot.empty) {
-      return false; // No duplicate found
-    }
-
-    // If issueNumber is provided (including 0), check for exact match with same issue number
-    if (issueNumber !== undefined && issueNumber !== null) {
-      const exactMatch = snapshot.docs.some((doc) => doc.data().issueNumber === issueNumber);
-      return exactMatch;
-    }
-
-    // If no issueNumber provided, any comic with same title is a duplicate
-    return true;
-  } catch (error) {
-    console.error('Error checking for duplicates:', error);
-    return false;
-  }
-};
-
-const applySortToQuery = (query, sort) => {
-  if (sort === 'rating') {
-    return query.orderBy('rating', 'desc');
-  }
-  if (sort === 'title') {
-    return query.orderBy('title', 'asc');
-  }
-  return query.orderBy('createdAt', 'desc');
+const toMillis = (v) => {
+  if (!v) return 0;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === 'object' && (v.seconds || v._seconds)) return (v.seconds || v._seconds) * 1000;
+  const t = new Date(v).getTime();
+  return Number.isNaN(t) ? 0 : t;
 };
 
 const sortComicsInMemory = (comics, sort) => {
@@ -75,70 +28,29 @@ const sortComicsInMemory = (comics, sort) => {
   if (sort === 'title') {
     return comics.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
   }
-  return comics.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  return comics.sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt));
 };
 
-// Get all comics with filtering and search
+// Get all comics with filtering and search (served from the in-memory cache)
 export const getAllComics = async (req, res) => {
   try {
-      const { search, author, series, status, genre, sort } = req.query;
-      const pageParam = req.query.page ? Math.max(parseInt(req.query.page, 10), 1) : null;
+    const { search, author, series, status, genre, sort } = req.query;
+    const pageParam = req.query.page ? Math.max(parseInt(req.query.page, 10), 1) : null;
     const rawLimit = req.query.limit ? parseInt(req.query.limit, 10) : null;
     const limit = rawLimit || (pageParam ? 50 : null);
     const page = pageParam || 1;
     const offset = limit ? (page - 1) * limit : 0;
 
-    let comics = null;
-    // Only use cache for the default collection view (no search/genre/pagination/limit/sold filter)
-    const useCache = !search && !genre && !limit && !req.query.page && !req.query.sold;
-    if (useCache) {
-      comics = getCachedComics();
-    }
-
-    if (!comics) {
-      let query = DB.collection(COLLECTION);
-
-      if (status) {
-        query = query.where('readingStatus', '==', status);
-      }
-      if (author) {
-        query = query.where('author', '==', author);
-      }
-      if (series) {
-        query = query.where('series', '==', series);
-      }
-      if (genre) {
-        query = query.where('genre', 'array-contains', genre);
-      }
-
-      if (limit && !search) {
-        query = applySortToQuery(query, sort).offset(offset).limit(limit + 1);
-      } else {
-        query = applySortToQuery(query, sort);
-      }
-
-      const snapshot = await query.get();
-      comics = [];
-
-      snapshot.forEach((doc) => {
-        comics.push({ _id: doc.id, ...doc.data() });
-      });
-
-      // Cache only the default (non-sold) collection view
-      if (useCache) {
-        const nonSold = comics.filter((c) => c.sold !== true);
-        setCachedComics(nonSold);
-        // Keep in-memory result as the full list but further below we'll filter sold out
-      }
-    }
-
-    let filtered = comics;
+    let filtered = await comicsCache.all();
 
     // Exclude sold comics by default unless the client explicitly requests sold items
     const includeSold = req.query.sold === 'true' || req.query.sold === '1';
-    if (!includeSold) {
-      filtered = filtered.filter((c) => c.sold !== true);
-    }
+    if (!includeSold) filtered = filtered.filter((c) => c.sold !== true);
+
+    if (status) filtered = filtered.filter((c) => c.readingStatus === status);
+    if (author) filtered = filtered.filter((c) => c.author === author);
+    if (series) filtered = filtered.filter((c) => c.series === series);
+    if (genre) filtered = filtered.filter((c) => Array.isArray(c.genre) && c.genre.includes(genre));
 
     if (search) {
       const lowerSearch = search.toLowerCase();
@@ -149,20 +61,11 @@ export const getAllComics = async (req, res) => {
       );
     }
 
-    let hasMore = false;
-    if (limit) {
-      if (search || genre) {
-        const pageItems = filtered.slice(offset, offset + limit);
-        hasMore = filtered.length > offset + limit;
-        filtered = pageItems;
-      } else if (filtered.length > limit) {
-        hasMore = true;
-        filtered = filtered.slice(0, limit);
-      }
-    }
+    filtered = sortComicsInMemory(filtered, sort);
 
     if (limit) {
-      return res.json({ data: filtered, hasMore });
+      const data = filtered.slice(offset, offset + limit);
+      return res.json({ data, hasMore: filtered.length > offset + limit });
     }
 
     res.json(filtered);
@@ -174,11 +77,11 @@ export const getAllComics = async (req, res) => {
 // Get single comic
 export const getComic = async (req, res) => {
   try {
-    const doc = await DB.collection(COLLECTION).doc(req.params.id).get();
-    if (!doc.exists) {
+    const comic = await comicsCache.get(req.params.id);
+    if (!comic) {
       return res.status(404).json({ message: 'Comic not found' });
     }
-    res.json({ _id: doc.id, ...doc.data() });
+    res.json(comic);
   } catch (error) {
     res.status(500).json({ message: 'Error fetching comic', error: error.message });
   }
@@ -189,17 +92,15 @@ export const createComic = async (req, res) => {
   try {
     const { title, issueNumber } = req.body;
 
-    // Check for duplicate comic
-    const isDuplicate = await checkDuplicateComic(title, issueNumber);
-    if (isDuplicate) {
+    if (await isDuplicateComic(title, issueNumber)) {
       const issueInfo = issueNumber ? ` #${issueNumber}` : '';
-      return res.status(409).json({ 
+      return res.status(409).json({
         message: `Este cómic ya existe en tu colección: "${title}"${issueInfo}. No se pueden agregar duplicados.`
       });
     }
 
-    const { normalizeComicForInsert } = await import('../utils/normalizeComic.js');
-    const normalized = normalizeComicForInsert(req.body);
+    const { _id, ...body } = req.body;
+    const normalized = normalizeComicForInsert(body);
     const comicData = {
       ...normalized,
       createdAt: new Date(),
@@ -207,8 +108,7 @@ export const createComic = async (req, res) => {
       sold: normalized.sold === true,
     };
     const docRef = await DB.collection(COLLECTION).add(comicData);
-    invalidateCache();
-    res.status(201).json({ _id: docRef.id, ...comicData });
+    res.status(201).json(comicsCache.set(docRef.id, comicData));
   } catch (error) {
     res.status(400).json({ message: 'Error creating comic', error: error.message });
   }
@@ -217,16 +117,21 @@ export const createComic = async (req, res) => {
 // Update comic
 export const updateComic = async (req, res) => {
   try {
-    const { normalizeComicForInsert } = await import('../utils/normalizeComic.js');
-    const normalized = normalizeComicForInsert(req.body);
+    const { id } = req.params;
+    const existing = await comicsCache.get(id);
+    if (!existing) {
+      return res.status(404).json({ message: 'Comic not found' });
+    }
+
+    const body = { ...req.body };
+    PROTECTED_FIELDS.forEach((f) => delete body[f]);
     const updateData = {
-      ...normalized,
+      ...normalizeComicForInsert(body),
       updatedAt: new Date(),
     };
-    await DB.collection(COLLECTION).doc(req.params.id).update(updateData);
-    invalidateCache();
-    const doc = await DB.collection(COLLECTION).doc(req.params.id).get();
-    res.json({ _id: doc.id, ...doc.data() });
+    await DB.collection(COLLECTION).doc(id).update(updateData);
+    comicsCache.merge(id, updateData);
+    res.json((await comicsCache.get(id)) || { ...existing, ...updateData });
   } catch (error) {
     res.status(400).json({ message: 'Error updating comic', error: error.message });
   }
@@ -236,7 +141,7 @@ export const updateComic = async (req, res) => {
 export const deleteComic = async (req, res) => {
   try {
     await DB.collection(COLLECTION).doc(req.params.id).delete();
-    invalidateCache();
+    comicsCache.remove(req.params.id);
     res.json({ message: 'Comic deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Error deleting comic', error: error.message });
@@ -246,16 +151,8 @@ export const deleteComic = async (req, res) => {
 // Get statistics
 export const getStatistics = async (req, res) => {
   try {
-    const snapshot = await DB.collection(COLLECTION).get();
-    const comics = [];
-
     // Exclude sold comics from statistics (they shouldn't count towards series/authors/locations)
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-      if (data?.sold !== true) {
-        comics.push(data);
-      }
-    });
+    const comics = (await comicsCache.all()).filter((c) => c.sold !== true);
 
     const totalComics = comics.length;
     const completedComics = comics.filter((c) => c.readingStatus === 'completed').length;
@@ -304,15 +201,9 @@ export const getStatistics = async (req, res) => {
 // Export comics as JSON
 export const exportComics = async (req, res) => {
   try {
-    const snapshot = await DB.collection(COLLECTION).get();
-    const comics = [];
-
-    snapshot.forEach((doc) => {
-      comics.push({ _id: doc.id, ...doc.data() });
-    });
+    const comics = await comicsCache.all();
 
     // Normalize exported comics for consistency
-    const { normalizeComicForInsert } = await import('../utils/normalizeComic.js');
     const normalized = comics.map(c => normalizeComicForInsert(c));
 
     // Support CSV export when ?format=csv is provided
@@ -389,7 +280,7 @@ export const exportComics = async (req, res) => {
   }
 };
 
-// Import comics from JSON
+// Import comics from JSON (batched writes, cache updated in place)
 export const importComics = async (req, res) => {
   try {
     const comics = req.body;
@@ -397,18 +288,25 @@ export const importComics = async (req, res) => {
       return res.status(400).json({ message: 'Invalid format, expected an array of comics' });
     }
 
+    const BATCH_SIZE = 400; // Firestore allows up to 500 writes per batch
     let importedCount = 0;
-    for (const comic of comics) {
+    for (let i = 0; i < comics.length; i += BATCH_SIZE) {
+      const batch = DB.batch();
+      const created = [];
+      for (const comic of comics.slice(i, i + BATCH_SIZE)) {
         const { _id, ...comicData } = comic;
-        // Normalize before inserting
-        const { normalizeComicForInsert } = await import('../utils/normalizeComic.js');
-        const normalized = normalizeComicForInsert(comicData);
-        await DB.collection(COLLECTION).add({
-          ...normalized,
+        const data = {
+          ...normalizeComicForInsert(comicData),
           createdAt: new Date(),
           updatedAt: new Date(),
-        });
-      importedCount++;
+        };
+        const ref = DB.collection(COLLECTION).doc();
+        batch.set(ref, data);
+        created.push([ref.id, data]);
+      }
+      await batch.commit();
+      created.forEach(([id, data]) => comicsCache.set(id, data));
+      importedCount += created.length;
     }
 
     res.status(201).json({ message: `${importedCount} comics imported successfully` });

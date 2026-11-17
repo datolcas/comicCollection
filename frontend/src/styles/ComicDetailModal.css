@@ -110,6 +110,23 @@
   background-color: #1565c0;
 }
 
+.modal-edit-btn {
+  background: #8b5cf6;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background-color 0.2s ease;
+  min-height: 44px;
+}
+
+.modal-edit-btn:hover {
+  background-color: #7c3aed;
+}
+
 .modal-sold-btn {
   background: #f3f4f6;
   color: #111827;

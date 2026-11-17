@@ -2,6 +2,7 @@ import axios from 'axios';
 import { load } from 'cheerio';
 import { db } from '../server.js';
 import { normalizeComicForInsert } from '../utils/normalizeComic.js';
+import { comicsCache, usVolumesCache, isDuplicateComic } from '../services/collectionCache.js';
 
 // Helper: reject implausible numeric matches (timestamps, large IDs)
 const isPlausibleIssue = (s) => {
@@ -15,28 +16,6 @@ const isPlausibleIssue = (s) => {
   if (Number.isNaN(n)) return false;
   // Accept 0 and reasonable small numbers (up to 9999)
   return n >= 0 && n <= 9999;
-};
-
-// Helper function to check for duplicate (same title + issue number)
-const checkDuplicateComic = async (title, issueNumber) => {
-  try {
-    const query = db.collection('comics').where('title', '==', title);
-    const snapshot = await query.get();
-    
-    if (snapshot.empty) {
-      return false;
-    }
-
-    if (issueNumber !== undefined && issueNumber !== null) {
-      const exactMatch = snapshot.docs.some(doc => doc.data().issueNumber === issueNumber);
-      return exactMatch;
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error checking for duplicates:', error);
-    return false;
-  }
 };
 
 const fetchHtml = async (url) => {
@@ -1112,29 +1091,11 @@ export const loadComicsFromList = async (req, res) => {
       total: urls.length 
     });
 
-    // Helper: Check for duplicate
-    const checkDuplicate = async (title, issueNumber) => {
-      try {
-        const query = db.collection('comics').where('title', '==', title);
-        const snapshot = await query.get();
-        if (snapshot.empty) return false;
-        if (issueNumber !== undefined && issueNumber !== null) {
-          return snapshot.docs.some(doc => doc.data().issueNumber === issueNumber);
-        }
-        return true;
-      } catch (error) {
-        return false;
-      }
-    };
-
-    // Helper: Create comic in DB
+    // Helper: Create comic in DB (and in the in-memory cache)
     const createComicInDB = async (comicData) => {
-      const docRef = await db.collection('comics').add({
-          ...comicData,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
-        return { _id: docRef.id, ...comicData };
+      const data = { ...comicData, createdAt: new Date(), updatedAt: new Date() };
+      const docRef = await db.collection('comics').add(data);
+      return comicsCache.set(docRef.id, data);
     };
 
     // Process each URL
@@ -1180,7 +1141,7 @@ export const loadComicsFromList = async (req, res) => {
         const comicData = await extractComicDataFromUrl(url);
 
         // Check for duplicate
-        const isDuplicate = await checkDuplicate(comicData.title, comicData.issueNumber);
+        const isDuplicate = await isDuplicateComic(comicData.title, comicData.issueNumber);
         if (isDuplicate) {
           const duplicateItem = {
             index: i,
@@ -1312,35 +1273,27 @@ export const createOrUpdateUsVolume = async (req, res) => {
     const volumeData = await getVolumeDataFromUrl(url);
     const volumesRef = db.collection('usaVolumes');
 
-    let existingVolume = null;
-    const existingByUrl = await volumesRef.where('sourceUrl', '==', url).get();
-    if (!existingByUrl.empty) {
-      existingVolume = existingByUrl.docs[0];
-    } else {
-      const existingByTitle = await volumesRef.where('title', '==', volumeData.title).get();
-      if (!existingByTitle.empty) {
-        existingVolume = existingByTitle.docs[0];
-      }
-    }
+    const volumes = await usVolumesCache.all();
+    const existingVolume =
+      volumes.find((v) => v.sourceUrl === url) ||
+      volumes.find((v) => v.title === volumeData.title) ||
+      null;
 
     if (existingVolume) {
-      await volumesRef.doc(existingVolume.id).update({
-        ...volumeData,
-        updatedAt: new Date(),
-      });
+      const updateData = { ...volumeData, updatedAt: new Date() };
+      await volumesRef.doc(existingVolume._id).update(updateData);
+      usVolumesCache.merge(existingVolume._id, updateData);
 
       return res.json({
-        _id: existingVolume.id,
+        _id: existingVolume._id,
         ...volumeData,
         updated: true,
       });
     }
 
-    const docRef = await volumesRef.add({
-      ...volumeData,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    const newData = { ...volumeData, createdAt: new Date(), updatedAt: new Date() };
+    const docRef = await volumesRef.add(newData);
+    usVolumesCache.set(docRef.id, newData);
 
     res.json({
       _id: docRef.id,
@@ -1358,8 +1311,9 @@ export const createOrUpdateUsVolume = async (req, res) => {
 
 export const getUsVolumes = async (req, res) => {
   try {
-    const volumesSnapshot = await db.collection('usaVolumes').orderBy('title').get();
-    const volumes = volumesSnapshot.docs.map((doc) => ({ _id: doc.id, ...doc.data() }));
+    const volumes = (await usVolumesCache.all())
+      .slice()
+      .sort((a, b) => String(a.title || '').localeCompare(String(b.title || '')));
     res.json(volumes);
   } catch (error) {
     console.error('Error fetching USA volumes:', error.message);
@@ -1382,10 +1336,9 @@ export const updateUsVolume = async (req, res) => {
     }
 
     const volumeData = await getVolumeDataFromUrl(url);
-    await db.collection('usaVolumes').doc(id).update({
-      ...volumeData,
-      updatedAt: new Date(),
-    });
+    const updateData = { ...volumeData, updatedAt: new Date() };
+    await db.collection('usaVolumes').doc(id).update(updateData);
+    usVolumesCache.merge(id, updateData);
 
     res.json({ _id: id, ...volumeData, updated: true });
   } catch (error) {
@@ -1405,6 +1358,7 @@ export const deleteUsVolume = async (req, res) => {
     }
 
     await db.collection('usaVolumes').doc(id).delete();
+    usVolumesCache.remove(id);
     res.json({ _id: id, deleted: true });
   } catch (error) {
     console.error('Error deleting USA volume:', error.message);
