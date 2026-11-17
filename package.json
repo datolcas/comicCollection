@@ -7,7 +7,8 @@
     "dev-backend": "cd backend && npm run dev",
     "start-frontend": "cd frontend && npm run preview",
     "dev-frontend": "cd frontend && npm run dev",
-    "comicCollectionDatolcas": "concurrently \"npm:dev-backend\" \"npm:dev-frontend\""
+    "comicCollectionDatolcas": "concurrently \"npm:dev-backend\" \"npm:dev-frontend\"",
+    "test": "npm --prefix backend test && npm --prefix frontend test"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

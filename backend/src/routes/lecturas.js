@@ -1,6 +1,5 @@
 import express from 'express';
-import { db } from '../server.js';
-import { comicsCache, lecturasCache } from '../services/collectionCache.js';
+import { comicsCache, lecturasCache, getDb } from '../services/collectionCache.js';
 
 const router = express.Router();
 const COLLECTION = 'lecturas';
@@ -54,7 +53,7 @@ router.post('/', async (req, res) => {
       updatedAt: new Date(),
     };
 
-    const docRef = await db.collection(COLLECTION).add(lecturaData);
+    const docRef = await getDb().collection(COLLECTION).add(lecturaData);
     const cached = lecturasCache.set(docRef.id, lecturaData);
 
     res.status(201).json(await toClient(cached));
@@ -93,7 +92,7 @@ router.put('/:id', async (req, res) => {
       updatedAt: new Date(),
     };
 
-    await db.collection(COLLECTION).doc(req.params.id).update(updateData);
+    await getDb().collection(COLLECTION).doc(req.params.id).update(updateData);
     lecturasCache.merge(req.params.id, updateData);
 
     const updated = (await lecturasCache.get(req.params.id)) || { ...existing, ...updateData };
@@ -106,7 +105,7 @@ router.put('/:id', async (req, res) => {
 // Eliminar lectura
 router.delete('/:id', async (req, res) => {
   try {
-    await db.collection(COLLECTION).doc(req.params.id).delete();
+    await getDb().collection(COLLECTION).doc(req.params.id).delete();
     lecturasCache.remove(req.params.id);
     res.json({ message: 'Lectura eliminada' });
   } catch (err) {

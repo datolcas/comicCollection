@@ -7,6 +7,12 @@
 
 let DB = null;
 
+// Firestore instance shared by controllers and routes (set once at startup or by tests)
+export const getDb = () => {
+  if (!DB) throw new Error('Database not initialized');
+  return DB;
+};
+
 // Convert Firestore Timestamps to JS Dates so cached data is consistent with
 // values written by this process (both serialize to ISO strings in JSON).
 const normalizeValue = (v) => {

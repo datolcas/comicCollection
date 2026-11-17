@@ -1,8 +1,7 @@
 import axios from 'axios';
 import { load } from 'cheerio';
-import { db } from '../server.js';
 import { normalizeComicForInsert } from '../utils/normalizeComic.js';
-import { comicsCache, usVolumesCache, isDuplicateComic } from '../services/collectionCache.js';
+import { comicsCache, usVolumesCache, isDuplicateComic, getDb } from '../services/collectionCache.js';
 
 // Helper: reject implausible numeric matches (timestamps, large IDs)
 const isPlausibleIssue = (s) => {
@@ -1094,7 +1093,7 @@ export const loadComicsFromList = async (req, res) => {
     // Helper: Create comic in DB (and in the in-memory cache)
     const createComicInDB = async (comicData) => {
       const data = { ...comicData, createdAt: new Date(), updatedAt: new Date() };
-      const docRef = await db.collection('comics').add(data);
+      const docRef = await getDb().collection('comics').add(data);
       return comicsCache.set(docRef.id, data);
     };
 
@@ -1271,7 +1270,7 @@ export const createOrUpdateUsVolume = async (req, res) => {
     }
 
     const volumeData = await getVolumeDataFromUrl(url);
-    const volumesRef = db.collection('usaVolumes');
+    const volumesRef = getDb().collection('usaVolumes');
 
     const volumes = await usVolumesCache.all();
     const existingVolume =
@@ -1337,7 +1336,7 @@ export const updateUsVolume = async (req, res) => {
 
     const volumeData = await getVolumeDataFromUrl(url);
     const updateData = { ...volumeData, updatedAt: new Date() };
-    await db.collection('usaVolumes').doc(id).update(updateData);
+    await getDb().collection('usaVolumes').doc(id).update(updateData);
     usVolumesCache.merge(id, updateData);
 
     res.json({ _id: id, ...volumeData, updated: true });
@@ -1357,7 +1356,7 @@ export const deleteUsVolume = async (req, res) => {
       return res.status(400).json({ message: 'Volume ID is required' });
     }
 
-    await db.collection('usaVolumes').doc(id).delete();
+    await getDb().collection('usaVolumes').doc(id).delete();
     usVolumesCache.remove(id);
     res.json({ _id: id, deleted: true });
   } catch (error) {

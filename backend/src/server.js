@@ -1,22 +1,11 @@
-import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import admin from 'firebase-admin';
-import comicRoutes from './routes/comics.js';
+import { createApp } from './app.js';
 import { __setDb } from './controllers/comicController.js';
-import userRoutes from './routes/users.js';
-import usaVolumeRoutes from './routes/usaVolumes.js';
-import lecturasRoutes from './routes/lecturas.js';
 
 dotenv.config();
 
-const app = express();
 const PORT = process.env.PORT || 5000;
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Firebase Initialization
 const firebaseConfig = {
@@ -36,29 +25,10 @@ try {
 
 const db = admin.firestore();
 
-// Provide DB to controllers that may run outside the full server lifecycle (tests)
-try {
-  __setDb(db);
-} catch (e) {
-  console.warn('Could not set DB on controllers:', e.message);
-}
+// Provide the DB to controllers, routes and caches
+__setDb(db);
 
-// Routes
-app.use('/api/comics', comicRoutes);
-app.use('/api/usa-volumes', usaVolumeRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/lecturas', lecturasRoutes);
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'API is running' });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Something went wrong', error: err.message });
-});
+const app = createApp();
 
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
@@ -72,26 +42,6 @@ server.on('error', (err) => {
   }
   process.exit(1);
 });
-
-// Configuración de CORS
-const allowedOrigins = [
-  'https://comiccollectiondtc.onrender.com', // Tu frontend en Render
-  'http://localhost:5173'                  // Para que sigas mapeando en local si quieres
-];
-
-app.use(cors({
-  origin: function (origin, callback) {
-    // Permitir peticiones sin origen (como apps móviles o herramientas como Postman)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Bloqueado por CORS: Origen no permitido'));
-    }
-  },
-  credentials: true
-}));
 
 export default app;
 export { db };
