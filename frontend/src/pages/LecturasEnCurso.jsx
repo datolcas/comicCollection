@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { getLecturas, deleteLectura } from '../services/lecturasService';
+import React, { useState } from 'react';
+import { useComics } from '../services/ComicContext';
 import AddLecturaModal from '../components/AddLecturaModal';
 import EditLecturaModal from '../components/EditLecturaModal';
 import '../styles/Lecturas.css';
@@ -7,31 +7,13 @@ import '../styles/Lecturas.css';
 export default function LecturasEnCurso() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [lecturas, setLecturas] = useState([]);
+  const { lecturas, lecturasLoading: loading, lecturasError, removeLectura } = useComics();
   const [editingLectura, setEditingLectura] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    loadLecturas();
-  }, []);
-
-  const loadLecturas = async () => {
-    try {
-      setLoading(true);
-      const data = await getLecturas();
-      setLecturas(data);
-      setError('');
-    } catch (err) {
-      setError('Error al cargar las lecturas');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [deleteError, setError] = useState('');
+  const error = deleteError || lecturasError;
 
   const handleAddLectura = async (lectura) => {
-    setLecturas(prev => [...prev, lectura]);
+    // The context already added it to the shared list
     setModalOpen(false);
   };
 
@@ -41,7 +23,6 @@ export default function LecturasEnCurso() {
   };
 
   const handleEditSave = (updated) => {
-    setLecturas(prev => prev.map(l => l._id === updated._id ? updated : l));
     setEditModalOpen(false);
     setEditingLectura(null);
   };
@@ -49,8 +30,7 @@ export default function LecturasEnCurso() {
   const handleDelete = async (id) => {
     if (window.confirm('¿Estás seguro de que quieres eliminar esta lectura?')) {
       try {
-        await deleteLectura(id);
-        setLecturas(prev => prev.filter(l => l._id !== id));
+        await removeLectura(id);
       } catch (err) {
         setError('Error al eliminar la lectura');
         console.error(err);

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { updateLectura } from '../services/lecturasService';
+import { useComics } from '../services/ComicContext';
 
 export default function EditLecturaModal({ open, lectura, onClose, onSave }) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const { editLectura } = useComics();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -18,7 +19,7 @@ export default function EditLecturaModal({ open, lectura, onClose, onSave }) {
     try {
       setSaving(true);
       setError('');
-      const updated = await updateLectura(lectura._id, startDate, endDate || null);
+      const updated = await editLectura(lectura._id, startDate, endDate || null);
       onSave(updated);
       setStartDate('');
       setEndDate('');

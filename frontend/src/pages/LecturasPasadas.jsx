@@ -1,31 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { getLecturas, deleteLectura } from '../services/lecturasService';
+import React, { useState } from 'react';
+import { useComics } from '../services/ComicContext';
 import EditLecturaModal from '../components/EditLecturaModal';
 import '../styles/Lecturas.css';
 
 export default function LecturasPasadas() {
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [lecturas, setLecturas] = useState([]);
+  const { lecturas, lecturasLoading: loading, lecturasError, removeLectura } = useComics();
   const [editingLectura, setEditingLectura] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    loadLecturas();
-  }, []);
-
-  const loadLecturas = async () => {
-    try {
-      setLoading(true);
-      const data = await getLecturas();
-      setLecturas(data);
-    } catch (err) {
-      console.error('Error al cargar las lecturas', err);
-      setError('Error al cargar las lecturas');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [deleteError, setError] = useState('');
+  const error = deleteError || lecturasError;
 
   const handleEditClick = (lectura) => {
     setEditingLectura(lectura);
@@ -33,7 +16,6 @@ export default function LecturasPasadas() {
   };
 
   const handleEditSave = (updated) => {
-    setLecturas(prev => prev.map(l => l._id === updated._id ? updated : l));
     setEditModalOpen(false);
     setEditingLectura(null);
   };
@@ -41,8 +23,7 @@ export default function LecturasPasadas() {
   const handleDelete = async (id) => {
     if (window.confirm('¿Estás seguro de que quieres eliminar esta lectura?')) {
       try {
-        await deleteLectura(id);
-        setLecturas(prev => prev.filter(l => l._id !== id));
+        await removeLectura(id);
       } catch (err) {
         setError('Error al eliminar la lectura');
         console.error(err);

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useRef, useMemo } from 'react';
 import api from './api';
+import * as lecturasService from './lecturasService';
 
 const ComicContext = createContext();
 
@@ -15,6 +16,11 @@ export const ComicProvider = ({ children }) => {
   const comicsLoaded = useRef(false);
   const comicsRequest = useRef(null);
   const volumesLoaded = useRef(false);
+  const [lecturas, setLecturas] = useState([]);
+  const [lecturasLoading, setLecturasLoading] = useState(true);
+  const [lecturasError, setLecturasError] = useState('');
+  const lecturasLoaded = useRef(false);
+  const lecturasRequest = useRef(null);
 
   // Sold comics are hidden everywhere in the UI
   const comics = useMemo(() => allComics.filter((c) => c.sold !== true), [allComics]);
@@ -45,6 +51,47 @@ export const ComicProvider = ({ children }) => {
       }
     })();
     return comicsRequest.current;
+  };
+
+  // Lecturas: loaded once, then kept in sync locally after each change
+  const fetchLecturas = async (options = {}) => {
+    if (lecturasLoaded.current && !options.force) return lecturas;
+    if (lecturasRequest.current) return lecturasRequest.current;
+    setLecturasLoading(true);
+    lecturasRequest.current = (async () => {
+      try {
+        const data = await lecturasService.getLecturas();
+        setLecturas(data);
+        lecturasLoaded.current = true;
+        setLecturasError('');
+        return data;
+      } catch (err) {
+        console.error(err);
+        setLecturasError('Error al cargar las lecturas');
+        return [];
+      } finally {
+        lecturasRequest.current = null;
+        setLecturasLoading(false);
+      }
+    })();
+    return lecturasRequest.current;
+  };
+
+  const addLectura = async (comicId, startDate, endDate) => {
+    const lectura = await lecturasService.createLectura(comicId, startDate, endDate);
+    setLecturas((prev) => [...prev, lectura]);
+    return lectura;
+  };
+
+  const editLectura = async (id, startDate, endDate) => {
+    const updated = await lecturasService.updateLectura(id, startDate, endDate);
+    setLecturas((prev) => prev.map((l) => (l._id === id ? updated : l)));
+    return updated;
+  };
+
+  const removeLectura = async (id) => {
+    await lecturasService.deleteLectura(id);
+    setLecturas((prev) => prev.filter((l) => l._id !== id));
   };
 
   const fetchStatistics = async () => {
@@ -228,6 +275,13 @@ export const ComicProvider = ({ children }) => {
         usVolumes,
         volumeLoading,
         loadComicsFromList,
+        lecturas,
+        lecturasLoading,
+        lecturasError,
+        fetchLecturas,
+        addLectura,
+        editLectura,
+        removeLectura,
       }}
     >
       {children}

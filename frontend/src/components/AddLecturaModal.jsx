@@ -1,9 +1,8 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { ComicContext } from '../services/ComicContext';
-import { createLectura } from '../services/lecturasService';
 
 export default function AddLecturaModal({ open, isOpen, onClose, onSave, preSelectedComicId }) {
-  const { comics } = useContext(ComicContext);
+  const { comics, addLectura } = useContext(ComicContext);
   const visible = open ?? isOpen;
   const [selectedComicId, setSelectedComicId] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -23,7 +22,7 @@ export default function AddLecturaModal({ open, isOpen, onClose, onSave, preSele
     try {
       setSaving(true);
       setError('');
-      const lectura = await createLectura(selectedComicId, startDate, endDate || null);
+      const lectura = await addLectura(selectedComicId, startDate, endDate || null);
       onSave(lectura);
       setSelectedComicId(preSelectedComicId || '');
       setStartDate('');
